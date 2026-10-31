@@ -204,6 +204,11 @@ def create_app(
     def rescan_cameras() -> dict:
         return camera_service.rescan()
 
+    @app.post('/api/camera/stop')
+    def stop_camera() -> dict:
+        camera_service.stop()
+        return camera_service.get_status()
+
     @app.get('/api/camera/stream')
     async def camera_stream() -> StreamingResponse:
         async def frames():

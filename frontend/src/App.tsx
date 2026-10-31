@@ -280,6 +280,21 @@ function App() {
     }
   }
 
+  const stopCamera = async () => {
+    try {
+      const response = await fetch('/api/camera/stop', { method: 'POST' })
+      const status = (await response.json()) as CameraStatus & { detail?: string }
+      if (!response.ok) throw new Error(status.detail ?? 'Kamera gagal dihentikan.')
+      setCameraStatus(status)
+    } catch (error) {
+      setCameraStatus((current) => ({
+        ...current,
+        state: 'error',
+        message: error instanceof Error ? error.message : 'Kamera gagal dihentikan.',
+      }))
+    }
+  }
+
   const sendImage = async (image: Blob, filename: string, quiet = false) => {
     if (predictionBusyRef.current) return
     predictionBusyRef.current = true
@@ -586,10 +601,11 @@ function App() {
             <button
               className="button button-secondary"
               type="button"
-              onClick={() => void rescanCameras()}
+              onClick={() => void (cameraActive ? stopCamera() : rescanCameras())}
               disabled={cameraStatus.state === 'scanning'}
             >
-              <RefreshCw size={15} /> {cameraStatus.state === 'scanning' ? 'Memindai kamera...' : 'Pindai ulang kamera'}
+              {cameraActive ? <Square size={14} /> : <RefreshCw size={15} />}
+              {cameraActive ? 'Matikan kamera' : cameraStatus.state === 'scanning' ? 'Memindai kamera...' : 'Pindai semua kamera'}
             </button>
             <label className="button button-secondary upload-button">
               <Upload size={16} /> Unggah foto

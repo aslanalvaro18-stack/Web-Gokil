@@ -20,14 +20,19 @@ Log tersimpan di `.run/backend.log` dan `.run/frontend.log`. Script tidak akan m
 
 Pastikan iPad dan komputer Linux berada di jaringan yang sama, lalu buka `http://ALAMAT-IP-LINUX:5173` di iPad. Alamat IP Linux dapat dilihat dengan `hostname -I`. Vite meneruskan `/api` ke backend lokal di port 3000.
 
-Browser iPad biasanya hanya mengizinkan kamera pada koneksi HTTPS tepercaya atau localhost. Karena alamat LAN Vite di atas memakai HTTP, gunakan **Unggah foto** untuk menguji tanpa HTTPS. Untuk kamera langsung, siapkan HTTPS dengan sertifikat yang dipercaya iPad. Izin kamera juga harus diberikan sekapada browser.
-Saat kamera aktif, browser iPad mengirim snapshot ke model Keras di laptop setiap sekitar 1,2 detik. Gunakan HTTPS tepercaya agar browser iPad mengizinkan kamera; unggah foto tetap tersedia sebagai fallback.
+Saat `./run.sh` dijalankan di Linux, backend otomatis memindai semua `/dev/video*`, mencoba setiap device, lalu membuka kamera pertama yang menghasilkan gambar. Dashboard menampilkan stream kamera laptop; browser tidak meminta izin kamera.
+
+Jika daftar kamera menunjukkan akses ditolak, pastikan pengguna Linux memiliki izin grup `video`. Jalankan `sudo usermod -aG video "$USER"`, lalu logout dan login kembali sebelum menjalankan ulang aplikasi. Pada mesin ini, kamera HP berada di `/dev/video1`; `/dev/video0` adalah Iriun output dan `/dev/video2` adalah node metadata.
 
 ## API
 
 | Method | Endpoint | Keterangan |
 | --- | --- | --- |
 | `GET` | `/api/health` | Plain text: `ok` |
+| `GET` | `/api/camera/status` | Status scanner dan daftar semua device kamera Linux |
+| `GET` | `/api/camera/stream` | Stream MJPEG dari kamera laptop yang aktif |
+| `POST` | `/api/camera/rescan` | Pindai ulang semua device kamera |
+| `POST` | `/api/camera/stop` | Matikan kamera laptop |
 | `POST` | `/api/telemetry` | Simpan uptime dan status alat |
 | `GET` | `/api/telemetry?limit=20` | Ambil riwayat telemetri, maksimal 100 baris |
 | `POST` | `/api/devices` | Daftarkan alat baru dengan ID dan nama |
