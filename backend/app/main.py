@@ -230,9 +230,30 @@ def create_app(
         return record
 
     @app.post('/api/devices/status', response_model=DeviceStatusRecord)
-    def update_device_status(payload: DeviceStatusUpdate) -> dict:
+    def update_device_status(
+        payload: DeviceStatusUpdate | None = None,
+        device_id: str | None = Query(
+            default=None,
+            min_length=1,
+            max_length=40,
+            pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$',
+        ),
+        status: Literal['hidup', 'mati'] | None = Query(default=None),
+    ) -> dict:
+        if payload is not None:
+            resolved_device_id = payload.device_id
+            resolved_status = payload.status
+        elif device_id is not None and status is not None:
+            resolved_device_id = device_id
+            resolved_status = status
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail='Kirim device_id dan status melalui query URL atau JSON body.',
+            )
+
         record = database.update_device_status(
-            app.state.database_path, payload.device_id, payload.status
+            app.state.database_path, resolved_device_id, resolved_status
         )
         if record is None:
             raise HTTPException(
@@ -241,8 +262,8 @@ def create_app(
         database.add_operation_event(
             app.state.database_path,
             'device_status_updated',
-            payload.device_id,
-            value=payload.status,
+            resolved_device_id,
+            value=resolved_status,
         )
         return record
 

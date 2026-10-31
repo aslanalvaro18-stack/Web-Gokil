@@ -52,6 +52,10 @@ def test_six_devices_can_report_status(tmp_path: Path) -> None:
             '/api/devices/status',
             json={'device_id': 'pompa-air', 'status': 'mati'},
         )
+        url_status = client.post(
+            '/api/devices/status?device_id=alat-3&status=hidup'
+        )
+        missing_status = client.post('/api/devices/status')
         statuses = client.get('/api/devices').json()
         duplicate = client.post(
             '/api/devices',
@@ -69,6 +73,9 @@ def test_six_devices_can_report_status(tmp_path: Path) -> None:
     assert created.status_code == 201
     assert created.json()['name'] == 'Pompa Air'
     assert created_status.json()['status'] == 'mati'
+    assert url_status.status_code == 200
+    assert url_status.json()['status'] == 'hidup'
+    assert missing_status.status_code == 422
     assert next(device for device in statuses if device['device_id'] == 'pompa-air')['status'] == 'mati'
     assert duplicate.status_code == 409
 

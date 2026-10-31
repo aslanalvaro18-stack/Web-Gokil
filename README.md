@@ -57,9 +57,10 @@ Contoh alat mengirim status:
 ```bash
 curl -X POST http://localhost:3000/api/devices -H 'Content-Type: application/json' -d '{"device_id":"pompa-air","name":"Pompa Air"}'
 curl -X POST http://localhost:3000/api/devices/status -H 'Content-Type: application/json' -d '{"device_id":"alat-1","status":"hidup"}'
+curl -X POST 'http://localhost:3000/api/devices/status?device_id=alat-1&status=hidup'
 ```
 
-Enam ID awal adalah `alat-1` sampai `alat-6`; alat tambahan dapat didaftarkan dari dashboard atau endpoint di atas. Gunakan ID yang sama saat mengirim status. `status` menerima `hidup` atau `mati`. Status awal adalah `belum_terhubung`; `last_seen` mencatat waktu POST terakhir.
+Enam ID awal adalah `alat-1` sampai `alat-6`; alat tambahan dapat didaftarkan dari dashboard atau endpoint di atas. Gunakan ID yang sama saat mengirim status. `status` menerima `hidup` atau `mati`. Perangkat bisa memakai contoh URL terakhir tanpa header atau body. Status awal adalah `belum_terhubung`; `last_seen` mencatat waktu POST terakhir.
 
 Contoh POST telemetri:
 
