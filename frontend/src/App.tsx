@@ -46,6 +46,7 @@ type CameraStatus = {
   active_name: string | null
   devices: CameraDevice[]
   message: string
+  prediction_ready: boolean
 }
 
 type Prediction = {
@@ -130,6 +131,7 @@ const emptyCameraStatus: CameraStatus = {
   active_name: null,
   devices: [],
   message: 'Menunggu status kamera.',
+  prediction_ready: false,
 }
 
 const eventLabels: Record<string, string> = {
@@ -338,7 +340,7 @@ function App() {
 
   const processNextFrame = async () => {
     const cameraFrame = cameraImageRef.current
-    if (cameraActive && cameraFrame?.complete && cameraFrame.naturalWidth > 0 && !predictionBusyRef.current) {
+    if (cameraActive && cameraStatus.prediction_ready && cameraFrame?.complete && cameraFrame.naturalWidth > 0 && !predictionBusyRef.current) {
       const canvas = document.createElement('canvas')
       canvas.width = cameraFrame.naturalWidth
       canvas.height = cameraFrame.naturalHeight
@@ -595,6 +597,9 @@ function App() {
                 </div>
               ))}
             </div>
+          )}
+          {cameraActive && !cameraStatus.prediction_ready && (
+            <p className="camera-model-note">Preview kamera aktif; model Keras belum siap untuk analisis.</p>
           )}
 
           <div className="camera-controls">

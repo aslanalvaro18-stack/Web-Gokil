@@ -97,6 +97,7 @@ def test_camera_status_is_available_without_camera_hardware(tmp_path: Path) -> N
 
     assert response.status_code == 200
     assert response.json()['state'] == 'stopped'
+    assert response.json()['prediction_ready'] is True
 
 
 def test_artecrobo_can_use_url_parameters_without_auth(tmp_path: Path) -> None:

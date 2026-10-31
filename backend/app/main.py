@@ -3,6 +3,7 @@ import json
 import logging
 import math
 import os
+from importlib.util import find_spec
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -141,6 +142,15 @@ def create_app(
     app.state.predictor = predictor or TeachableMachineClassifier(model_path, labels_path)
     app.state.weather_provider = weather_provider or get_pakem_weather
     app.state.camera_service = camera_service
+    app.state.prediction_model_ready = predictor is not None or (
+        model_path.is_file() and labels_path.is_file() and find_spec('tensorflow') is not None
+    )
+
+    def camera_status_response() -> dict:
+        return {
+            **camera_service.get_status(),
+            'prediction_ready': app.state.prediction_model_ready,
+        }
 
     def access_response(prediction: dict | None) -> dict:
         if prediction is None:
@@ -198,16 +208,17 @@ def create_app(
 
     @app.get('/api/camera/status')
     def camera_status() -> dict:
-        return camera_service.get_status()
+        return camera_status_response()
 
     @app.post('/api/camera/rescan')
     def rescan_cameras() -> dict:
-        return camera_service.rescan()
+        camera_service.rescan()
+        return camera_status_response()
 
     @app.post('/api/camera/stop')
     def stop_camera() -> dict:
         camera_service.stop()
-        return camera_service.get_status()
+        return camera_status_response()
 
     @app.get('/api/camera/stream')
     async def camera_stream() -> StreamingResponse:
