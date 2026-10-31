@@ -1,0 +1,199 @@
+# AGRO-SEMBADA Dashboard
+
+Dashboard pemantauan alat AGRO-SEMBADA oleh Pradnyasiwi QuadTech, SMPN 4 Pakem. Frontend berjalan di browser iPad dan backend Python berjalan di Linux.
+
+## Menjalankan aplikasi
+
+Dari folder proyek, jalankan semua service dengan satu perintah:
+
+```bash
+./run.sh
+```
+
+Script menyiapkan virtual environment/dependency bila belum tersedia, lalu menjalankan backend dan frontend di background. Untuk menghentikan keduanya:
+
+```bash
+./unrun.sh
+```
+
+Log tersimpan di `.run/backend.log` dan `.run/frontend.log`. Script tidak akan menghentikan proses lain jika port 3000 atau 5173 sudah digunakan.
+
+Pastikan iPad dan komputer Linux berada di jaringan yang sama, lalu buka `http://ALAMAT-IP-LINUX:5173` di iPad. Alamat IP Linux dapat dilihat dengan `hostname -I`. Vite meneruskan `/api` ke backend lokal di port 3000.
+
+Browser iPad biasanya hanya mengizinkan kamera pada koneksi HTTPS tepercaya atau localhost. Karena alamat LAN Vite di atas memakai HTTP, gunakan **Unggah foto** untuk menguji tanpa HTTPS. Untuk kamera langsung, siapkan HTTPS dengan sertifikat yang dipercaya iPad. Izin kamera juga harus diberikan sekapada browser.
+Saat kamera aktif, browser iPad mengirim snapshot ke model Keras di laptop setiap sekitar 1,2 detik. Gunakan HTTPS tepercaya agar browser iPad mengizinkan kamera; unggah foto tetap tersedia sebagai fallback.
+
+## API
+
+| Method | Endpoint | Keterangan |
+| --- | --- | --- |
+| `GET` | `/api/health` | Plain text: `ok` |
+| `POST` | `/api/telemetry` | Simpan uptime dan status alat |
+| `GET` | `/api/telemetry?limit=20` | Ambil riwayat telemetri, maksimal 100 baris |
+| `POST` | `/api/devices` | Daftarkan alat baru dengan ID dan nama |
+| `POST` | `/api/devices/status` | Terima status `hidup`/`mati` dari alat yang sudah terdaftar |
+| `GET` | `/api/devices` | Ambil status terakhir seluruh alat |
+| `POST` | `/api/predictions` | Kirim snapshot wajah ke model Keras di laptop; multipart field `image` |
+| `GET` | `/api/predictions` | Plain text kelas terakhir, misalnya `owner`; `unknown` jika belum dikenal/kedaluwarsa |
+| `GET` | `/api/predictions/latest` | Ambil prediksi terakhir |
+| `GET` | `/api/access/latest` | Ambil keputusan akses terkini |
+| `GET` | `/api/dashboard` | Ambil telemetri, identitas, dan keputusan akses terakhir |
+| `GET` | `/api/weather` | Cuaca terkini untuk Pakem, Sleman |
+| `GET` | `/api/control/state` | Mode, sesi jemur, posisi aktuator, dan command menunggu |
+| `POST` | `/api/control/mode?mode=auto` | Ubah mode tanpa JSON body |
+| `POST` | `/api/control/actuators/{name}?position=open` | Kirim posisi aktuator saat manual |
+| `POST` | `/api/drying/start?target_seconds=3600` | Mulai sesi jemur tanpa JSON body |
+| `POST` | `/api/drying/stop` | Akhiri sesi dan catat durasi |
+| `GET` | `/api/events?limit=50` | Ambil riwayat operasi |
+| `POST` | `/api/events?event_type=...` | Catat event tambahan dari alat |
+| `GET` | `/api/emergency` | Plain text status: `on` atau `off` |
+| `GET` | `/api/emergency?mode=on` | Aktifkan emergency dan antrekan posisi aman |
+| `POST` | `/api/emergency?mode=off` | Nonaktifkan emergency tanpa JSON body |
+| `GET` | `/api/device/commands` | ArtecRobo mengambil command tertunda |
+| `POST` | `/api/device/commands/{id}/ack?actual_position=closed` | ACK hasil command tanpa JSON body |
+
+Contoh alat mengirim status:
+
+```bash
+curl -X POST http://localhost:3000/api/devices -H 'Content-Type: application/json' -d '{"device_id":"pompa-air","name":"Pompa Air"}'
+curl -X POST http://localhost:3000/api/devices/status -H 'Content-Type: application/json' -d '{"device_id":"alat-1","status":"hidup"}'
+```
+
+Enam ID awal adalah `alat-1` sampai `alat-6`; alat tambahan dapat didaftarkan dari dashboard atau endpoint di atas. Gunakan ID yang sama saat mengirim status. `status` menerima `hidup` atau `mati`. Status awal adalah `belum_terhubung`; `last_seen` mencatat waktu POST terakhir.
+
+Contoh POST telemetri:
+
+```bash
+curl -X POST http://localhost:3000/api/telemetry \
+  -H 'Content-Type: application/json' \
+  -d '{"uptime_seconds": 7250, "status": "running"}'
+```
+
+Perangkat dapat mengirim JSON yang sama. `uptime_seconds` harus bilangan bulat non-negatif; `status` berupa teks, misalnya `running`, `stopped`, atau `unknown`.
+
+## Identifikasi wajah dan ArtecRobo 2.0
+
+Model Keras mengklasifikasikan foto yang diterima; label kelas menentukan identitas. Label yang diizinkan secara default adalah `owner`, `trusted`, dan `terpercaya` (pencocokan tidak membedakan huruf besar/kecil). Kelas lain menghasilkan `untrusted`. Confidence di bawah ambang menghasilkan `unknown`, yang selalu dianggap tidak tepercaya.
+
+Ekspor model klasifikasi gambar Teachable Machine ke `backend/models/teachable_machine/keras_model.h5`, beserta `labels.txt`. Buat kelas terpisah untuk setiap orang yang diizinkan dan kelas seperti `unknown`/`visitor` untuk orang lain. Latih dengan variasi pencahayaan dan sudut wajah. Runtime mengharapkan input RGB 224x224 yang dinormalisasi ke rentang -1 sampai 1.
+
+Atur environment sebelum menjalankan backend:
+
+```bash
+export AGRO_TRUSTED_LABELS="owner,trusted,terpercaya"
+export AGRO_MIN_CONFIDENCE="0.85"
+export AGRO_ACCESS_MAX_AGE_SECONDS="15"
+```
+
+Tidak ada autentikasi token pada endpoint perangkat. Jalankan hanya pada LAN tepercaya, gunakan firewall, dan jangan expose port API ke internet publik.
+
+Contoh POST foto dari perangkat:
+
+```bash
+curl -X POST http://localhost:3000/api/predictions \
+  -F 'image=@foto-tanaman.jpg'
+```
+
+Foto wajah maksimal 10 MB. Server tidak menyimpan file foto, hanya label, confidence, waktu, dan keputusan akses. GET perangkat tidak menjalankan inferensi; perangkat mengirim foto melalui POST lalu mengambil hasil melalui GET.
+
+Contoh polling GET ArtecRobo:
+
+```bash
+curl http://localhost:3000/api/access/latest
+```
+
+Untuk polling teks kelas terakhir dari ArtecRobo:
+
+```bash
+curl http://localhost:3000/api/predictions
+```
+
+Respons berupa teks biasa, misalnya `owner`, `visitor`, atau `unknown`.
+
+Respons ringkas:
+
+```json
+{
+  "prediction_id": 17,
+  "identity": "owner",
+  "access_status": "trusted",
+  "is_trusted": true,
+  "confidence": 0.94,
+  "captured_at": "2026-10-31T08:30:00+00:00",
+  "expires_at": "2026-10-31T08:30:15+00:00",
+  "message": "Identitas cocok dengan daftar yang diizinkan."
+}
+```
+
+Jika belum ada hasil, confidence terlalu rendah, atau hasil lebih lama daripada batas waktu, status menjadi `unknown` dan `is_trusted` bernilai `false`. ArtecRobo sebaiknya memproses setiap `prediction_id` hanya sekali dan menolak data kedaluwarsa.
+
+**Batas keamanan:** klasifikasi wajah biasa bukan liveness detection dan dapat tertipu foto/video. Jangan menghubungkan respons model ini sebagai satu-satunya mekanisme pembuka kunci. Gunakan verifikasi liveness/faktor kedua, autentikasi perangkat, HTTPS tepercaya, serta pengendali pintu lokal dengan kondisi gagal-tertutup. Format HTTP di atas adalah kontrak API generik; library dan format program ArtecRobo 2.0 bergantung pada firmware yang digunakan.
+
+## Cuaca Pakem
+
+`GET /api/weather` mengambil kondisi cuaca terkini Pakem, Sleman dari Open-Meteo dan tidak memerlukan API key. Server Linux perlu akses internet. Dashboard menampilkan suhu, kondisi, dan kelembapan; jika layanan cuaca tidak dapat dijangkau, panel cuaca menampilkan status tidak tersedia.
+
+Dokumentasi API interaktif tersedia di `http://localhost:3000/docs` saat backend aktif.
+
+## Manual, auto, dan emergency
+
+Mode awal adalah `manual`. Di mode manual, dashboard dapat mengantrekan posisi atap `open` atau `closed`. Mulai sesi jemur dengan target detik; sistem mencatat waktu mulai, waktu selesai, dan durasi aktual. `POST /api/events` menerima event tambahan seperti pembacaan sensor atau aktivitas alat lain, sehingga event itu ikut tersimpan di SQLite dan tampil di log operasi.
+
+Di mode `auto`, backend mengevaluasi kondisi setiap 15 detik (ubah dengan `AGRO_AUTOMATION_INTERVAL_SECONDS`). Tanpa sesi jemur, atap kembali ke posisi aman. Saat sesi aktif, atap dibuka jika siang dan tidak hujan; atap ditutup saat hujan, malam, data cuaca gagal, atau durasi target tercapai. Sesi yang mencapai target dihentikan otomatis dan lama prosesnya dicatat.
+
+Aktifkan emergency dengan GET berikut. Perintah ini hanya mengaktifkan emergency dan mengantrekan posisi aman:
+
+```bash
+curl 'http://localhost:3000/api/emergency?mode=on'
+```
+
+Emergency menghentikan sesi jemur, menonaktifkan command manual/auto, mengganti command tertunda, lalu mengantrekan semua aktuator ke posisi aman. GET `/api/emergency` tanpa parameter `mode` hanya membaca status dan mengembalikan plain text `on` atau `off`. Reset emergency memakai POST `http://localhost:3000/api/emergency?mode=off`. Posisi aman default atap adalah `closed`; atur aktuator lain dengan environment JSON, misalnya `AGRO_SAFE_POSITIONS='{"roof":"closed","pump":"off"}'`.
+
+`AGRO_ACTUATOR_POSITIONS` membatasi nilai posisi yang dapat dikirim melalui API. Tambahkan nama aktuator dan posisi yang benar-benar didukung firmware; setiap nama di `AGRO_SAFE_POSITIONS` juga harus memiliki posisi aman yang diizinkan.
+
+ArtecRobo mengambil command tertunda melalui GET `/api/device/commands`, menjalankannya di firmware, lalu mengirim ACK ke `/api/device/commands/{id}/ack` dengan `actual_position`, `success`, dan `detail`. Command terbaru menggantikan command lama yang masih pending. Backend hanya mengantrekan perintah; penggerak fisik tetap harus dibuat dan diuji di firmware sesuai pin, driver, sensor, dan protokol alat. Emergency juga bergantung pada robot yang sedang online untuk menerima command; sediakan interlock/failsafe lokal pada perangkat.
+
+Contoh mengambil command:
+
+```bash
+curl http://localhost:3000/api/device/commands
+```
+
+Contoh command tanpa header atau JSON body:
+
+```bash
+curl -X POST 'http://localhost:3000/api/control/mode?mode=auto'
+curl -X POST 'http://localhost:3000/api/drying/start?target_seconds=3600'
+curl -X POST 'http://localhost:3000/api/telemetry?uptime_seconds=7250&status=running'
+curl -X POST 'http://localhost:3000/api/events?event_type=drying_note&value=mulai'
+curl -X POST 'http://localhost:3000/api/device/commands/12/ack?actual_position=closed'
+```
+
+Log lengkap termasuk telemetri, sesi mulai/selesai, perubahan mode, command, ACK/gagal, emergency, dan event khusus tersedia di `GET /api/events`.
+
+## Model Teachable Machine
+
+Backend mendukung model **image classification** Teachable Machine yang diekspor sebagai Keras `keras_model.h5` beserta `labels.txt`. Pasang kedua file ke `backend/models/teachable_machine/`, lalu instal dependency inferensi:
+
+```bash
+cd backend
+source .venv/bin/activate
+pip install -r requirements-ml.txt
+```
+
+Nama file dan lokasi dapat diubah menggunakan environment variable `AGRO_MODEL_PATH` dan `AGRO_LABELS_PATH`. Jika model belum dipasang, telemetri dan dashboard tetap berfungsi; POST gambar akan memberi status 503 dengan petunjuk konfigurasi.
+
+Database SQLite dibuat otomatis di `backend/data/agro_sembada.db`. Lokasinya dapat diubah dengan `AGRO_DATABASE_PATH`. Untuk origin frontend selain Vite lokal, atur `AGRO_CORS_ORIGINS` sebagai daftar origin yang dipisahkan koma.
+
+## Logo
+
+Logo sekolah yang dipakai pada header dan favicon berada di `frontend/public/assets/brand/dada.jpeg`.
+
+## Tes
+
+```bash
+backend/.venv/bin/python -m pytest backend
+npm --prefix frontend run build
+```
+
+Tes backend menggunakan classifier tiruan dan database sementara, jadi tidak membutuhkan model Keras atau koneksi cuaca. API perangkat tidak memakai autentikasi; gunakan hanya pada LAN tepercaya, aktifkan firewall, dan jangan expose API ke internet publik.

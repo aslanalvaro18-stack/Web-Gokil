@@ -1,0 +1,30 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --ink: #202a25;
+  --muted: #78827a;
+  --line: #e0e5dc;
+  --paper: #fff;
+  --canvas: #f5f7f2;
+  --green: #2d6048;
+  --acid: #c8df66;
+  --acid-dark: #758b2c;
+  --tomato: #cf684d;
+  --display: 'Manrope', 'Trebuchet MS', sans-serif;
+  --mono: 'DM Mono', 'SFMono-Regular', Consolas, monospace;
+
+  font-family: var(--display);
+  color: var(--ink);
+  background: var(--canvas);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* { box-sizing: border-box; }
+
+body { min-width: 320px; min-height: 100vh; margin: 0; }
+button, input { font: inherit; }
+button:focus-visible, input:focus-visible, label:focus-within { outline: 2px solid var(--acid-dark); outline-offset: 3px; }
+#root { min-height: 100vh; }
