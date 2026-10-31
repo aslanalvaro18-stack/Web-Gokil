@@ -90,6 +90,15 @@ def test_health_returns_plain_text_ok(tmp_path: Path) -> None:
     assert response.headers['content-type'].startswith('text/plain')
 
 
+def test_camera_status_is_available_without_camera_hardware(tmp_path: Path) -> None:
+    app = create_app(tmp_path / 'test.db', FakeClassifier(), camera_autostart=False)
+    with TestClient(app) as client:
+        response = client.get('/api/camera/status')
+
+    assert response.status_code == 200
+    assert response.json()['state'] == 'stopped'
+
+
 def test_artecrobo_can_use_url_parameters_without_auth(tmp_path: Path) -> None:
     app = create_app(tmp_path / 'test.db', FakeClassifier())
     with TestClient(app) as client:

@@ -10,7 +10,7 @@ from typing import Callable, Literal, Protocol
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from app import database
 from app.schemas import (
@@ -33,6 +33,7 @@ from app.schemas import (
     TelemetryRecord,
 )
 from app.services.automation import run_automation_cycle
+from app.services.local_camera import LocalCameraService
 from app.services.teachable_machine import (
     InvalidImageError,
     ModelUnavailableError,
@@ -53,6 +54,7 @@ def create_app(
     database_path: str | Path | None = None,
     predictor: Classifier | None = None,
     weather_provider: Callable[[], dict] | None = None,
+    camera_autostart: bool | None = None,
 ) -> FastAPI:
     resolved_database_path = Path(
         database_path or os.getenv('AGRO_DATABASE_PATH', BACKEND_DIR / 'data/agro_sembada.db')
@@ -67,6 +69,9 @@ def create_app(
     minimum_confidence = float(os.getenv('AGRO_MIN_CONFIDENCE', '0.85'))
     access_max_age = int(os.getenv('AGRO_ACCESS_MAX_AGE_SECONDS', '15'))
     automation_interval = max(5, int(os.getenv('AGRO_AUTOMATION_INTERVAL_SECONDS', '15')))
+    should_autostart_camera = camera_autostart if camera_autostart is not None else (
+        os.getenv('AGRO_CAMERA_AUTOSTART', '0').strip().casefold() in {'1', 'true', 'yes', 'on'}
+    )
     try:
         safe_positions = json.loads(os.getenv('AGRO_SAFE_POSITIONS', '{"roof":"closed"}'))
         configured_positions = json.loads(
@@ -93,6 +98,7 @@ def create_app(
     actuator_positions = {
         name: set(positions) for name, positions in configured_positions.items()
     }
+    camera_service = LocalCameraService()
     for name, safe_position in safe_positions.items():
         actuator_positions.setdefault(name, {safe_position})
         if safe_position not in actuator_positions[name]:
@@ -114,10 +120,13 @@ def create_app(
     async def lifespan(_: FastAPI):
         database.initialize_database(resolved_database_path)
         database.configure_safe_positions(resolved_database_path, safe_positions)
+        if should_autostart_camera:
+            camera_service.start()
         automation_task = asyncio.create_task(automation_loop())
         try:
             yield
         finally:
+            camera_service.stop()
             automation_task.cancel()
             with suppress(asyncio.CancelledError):
                 await automation_task
@@ -131,6 +140,7 @@ def create_app(
     app.state.database_path = resolved_database_path
     app.state.predictor = predictor or TeachableMachineClassifier(model_path, labels_path)
     app.state.weather_provider = weather_provider or get_pakem_weather
+    app.state.camera_service = camera_service
 
     def access_response(prediction: dict | None) -> dict:
         if prediction is None:
@@ -185,6 +195,29 @@ def create_app(
     @app.get('/api/health', response_class=PlainTextResponse)
     def health() -> str:
         return 'ok'
+
+    @app.get('/api/camera/status')
+    def camera_status() -> dict:
+        return camera_service.get_status()
+
+    @app.post('/api/camera/rescan')
+    def rescan_cameras() -> dict:
+        return camera_service.rescan()
+
+    @app.get('/api/camera/stream')
+    async def camera_stream() -> StreamingResponse:
+        async def frames():
+            while True:
+                frame = camera_service.latest_frame()
+                if frame is not None:
+                    yield b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
+                await asyncio.sleep(0.05)
+
+        return StreamingResponse(
+            frames(),
+            media_type='multipart/x-mixed-replace; boundary=frame',
+            headers={'Cache-Control': 'no-cache'},
+        )
 
     @app.post('/api/telemetry', response_model=TelemetryRecord)
     def create_telemetry(
