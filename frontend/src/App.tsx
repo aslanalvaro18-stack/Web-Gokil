@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import {
   Activity,
   AlertCircle,
@@ -338,7 +338,7 @@ function App() {
     }
   }
 
-  const processNextFrame = async () => {
+  const processNextFrame = useEffectEvent(async () => {
     const cameraFrame = cameraImageRef.current
     if (cameraActive && cameraStatus.prediction_ready && cameraFrame?.complete && cameraFrame.naturalWidth > 0 && !predictionBusyRef.current) {
       const canvas = document.createElement('canvas')
@@ -353,7 +353,7 @@ function App() {
     if (cameraActive) {
       cameraTimerRef.current = window.setTimeout(() => void processNextFrame(), 1200)
     }
-  }
+  })
 
   const cameraActive = cameraStatus.state === 'online'
 
