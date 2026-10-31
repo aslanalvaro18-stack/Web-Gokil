@@ -33,6 +33,21 @@ type Device = {
   last_seen: string | null
 }
 
+type CameraDevice = {
+  device: string
+  name: string
+  available: boolean
+  message: string
+}
+
+type CameraStatus = {
+  state: 'stopped' | 'scanning' | 'online' | 'offline' | 'unavailable' | 'error'
+  active_device: string | null
+  active_name: string | null
+  devices: CameraDevice[]
+  message: string
+}
+
 type Prediction = {
   class_name: string
   confidence: number
@@ -109,6 +124,14 @@ const emptyDashboard: DashboardData = {
   events: [],
 }
 
+const emptyCameraStatus: CameraStatus = {
+  state: 'stopped',
+  active_device: null,
+  active_name: null,
+  devices: [],
+  message: 'Menunggu status kamera.',
+}
+
 const eventLabels: Record<string, string> = {
   actuator_acknowledged: 'Aktuator selesai',
   actuator_commanded: 'Perintah aktuator',
@@ -150,9 +173,9 @@ function formatTimestamp(value: string | undefined) {
 function App() {
   const [dashboard, setDashboard] = useState(emptyDashboard)
   const [devices, setDevices] = useState<Device[]>([])
+  const [cameraStatus, setCameraStatus] = useState(emptyCameraStatus)
   const [apiOnline, setApiOnline] = useState(false)
   const [uptimeInput, setUptimeInput] = useState('3600')
-  const [cameraActive, setCameraActive] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
   const [weather, setWeather] = useState<Weather | null>(null)
@@ -162,8 +185,7 @@ function App() {
   const [deviceNameInput, setDeviceNameInput] = useState('')
   const [deviceBusy, setDeviceBusy] = useState(false)
   const [deviceNotice, setDeviceNotice] = useState('')
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const streamRef = useRef<MediaStream | null>(null)
+  const cameraImageRef = useRef<HTMLImageElement>(null)
   const cameraTimerRef = useRef<number | null>(null)
   const predictionBusyRef = useRef(false)
 
@@ -204,46 +226,58 @@ function App() {
       }
     }
 
+    const refreshCamera = async () => {
+      try {
+        const response = await fetch('/api/camera/status')
+        if (!response.ok) throw new Error('Status kamera tidak tersedia.')
+        const status = (await response.json()) as CameraStatus
+        if (active) setCameraStatus(status)
+      } catch {
+        if (active) {
+          setCameraStatus({
+            ...emptyCameraStatus,
+            state: 'unavailable',
+            message: 'Backend kamera tidak merespons.',
+          })
+        }
+      }
+    }
+
     void refresh()
     void refreshWeather()
+    void refreshCamera()
     const interval = window.setInterval(() => void refresh(), 5000)
     const weatherInterval = window.setInterval(() => void refreshWeather(), 600000)
+    const cameraInterval = window.setInterval(() => void refreshCamera(), 2000)
     return () => {
       active = false
       window.clearInterval(interval)
       window.clearInterval(weatherInterval)
+      window.clearInterval(cameraInterval)
       if (cameraTimerRef.current !== null) window.clearTimeout(cameraTimerRef.current)
-      streamRef.current?.getTracks().forEach((track) => track.stop())
     }
   }, [])
 
-  useEffect(() => {
-    if (videoRef.current && streamRef.current) {
-      videoRef.current.srcObject = streamRef.current
-    }
-  }, [cameraActive])
-
-  const startCamera = async () => {
+  const rescanCameras = async () => {
+    setCameraStatus((current) => ({
+      ...current,
+      state: 'scanning',
+      message: 'Memindai semua kamera Linux...',
+    }))
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'user' } },
-        audio: false,
+      const response = await fetch('/api/camera/rescan', {
+        method: 'POST',
       })
-      streamRef.current = stream
-      setCameraActive(true)
-      setNotice('Kamera aktif. Identifikasi wajah berjalan otomatis.')
-      cameraTimerRef.current = window.setTimeout(() => void processNextFrame(stream), 700)
-    } catch {
-      setNotice('Kamera tidak dapat dibuka. Gunakan unggah foto sebagai alternatif.')
+      const status = (await response.json()) as CameraStatus & { detail?: string }
+      if (!response.ok) throw new Error(status.detail ?? 'Pemindaian kamera gagal.')
+      setCameraStatus(status)
+    } catch (error) {
+      setCameraStatus((current) => ({
+        ...current,
+        state: 'error',
+        message: error instanceof Error ? error.message : 'Pemindaian kamera gagal.',
+      }))
     }
-  }
-
-  const stopCamera = () => {
-    if (cameraTimerRef.current !== null) window.clearTimeout(cameraTimerRef.current)
-    cameraTimerRef.current = null
-    streamRef.current?.getTracks().forEach((track) => track.stop())
-    streamRef.current = null
-    setCameraActive(false)
   }
 
   const sendImage = async (image: Blob, filename: string, quiet = false) => {
@@ -287,23 +321,34 @@ function App() {
     }
   }
 
-  const processNextFrame = async (stream: MediaStream) => {
-    if (streamRef.current !== stream || !stream.active) return
-    const video = videoRef.current
-    if (video && video.videoWidth > 0 && !predictionBusyRef.current) {
+  const processNextFrame = async () => {
+    const cameraFrame = cameraImageRef.current
+    if (cameraActive && cameraFrame?.complete && cameraFrame.naturalWidth > 0 && !predictionBusyRef.current) {
       const canvas = document.createElement('canvas')
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      canvas.getContext('2d')?.drawImage(video, 0, 0)
-      const image = await new Promise<Blob | null>((resolve) =>
+      canvas.width = cameraFrame.naturalWidth
+      canvas.height = cameraFrame.naturalHeight
+      canvas.getContext('2d')?.drawImage(cameraFrame, 0, 0)
+      const imageBlob = await new Promise<Blob | null>((resolve) =>
         canvas.toBlob(resolve, 'image/jpeg', 0.82),
       )
-      if (image) await sendImage(image, 'agro-sembada-live.jpg', true)
+      if (imageBlob) await sendImage(imageBlob, 'laptop-camera.jpg', true)
     }
-    if (streamRef.current === stream && stream.active) {
-      cameraTimerRef.current = window.setTimeout(() => void processNextFrame(stream), 1200)
+    if (cameraActive) {
+      cameraTimerRef.current = window.setTimeout(() => void processNextFrame(), 1200)
     }
   }
+
+  const cameraActive = cameraStatus.state === 'online'
+
+  useEffect(() => {
+    if (cameraTimerRef.current !== null) window.clearTimeout(cameraTimerRef.current)
+    cameraTimerRef.current = cameraActive
+      ? window.setTimeout(() => void processNextFrame(), 700)
+      : null
+    return () => {
+      if (cameraTimerRef.current !== null) window.clearTimeout(cameraTimerRef.current)
+    }
+  }, [cameraActive])
 
   const submitTelemetry = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -507,33 +552,45 @@ function App() {
               <p className="section-index">01 / IDENTIFIKASI WAJAH</p>
               <h2>Verifikasi identitas</h2>
             </div>
-            <span className={`live-tag ${cameraActive ? 'live' : ''}`}><span />{cameraActive ? 'LIVE' : 'SIAP'}</span>
+            <span className={`live-tag ${cameraActive ? 'live' : cameraStatus.state === 'scanning' ? 'scanning' : ''}`}><span />{cameraActive ? 'LIVE' : cameraStatus.state === 'scanning' ? 'SCAN' : 'SIAP'}</span>
           </div>
 
           <div className={`camera-stage ${cameraActive ? 'camera-on' : ''}`}>
             {cameraActive ? (
-              <video ref={videoRef} autoPlay playsInline muted aria-label="Tampilan kamera iPad" />
+              <img ref={cameraImageRef} src="/api/camera/stream" alt="Pratinjau kamera laptop" />
             ) : (
               <div className="camera-empty">
                 <div className="camera-symbol"><Camera size={28} strokeWidth={1.6} /></div>
-                <strong>Belum ada gambar</strong>
-                <span>Ambil foto wajah yang jelas untuk memeriksa identitas.</span>
+                <strong>{cameraStatus.state === 'scanning' ? 'Memindai kamera' : 'Kamera belum aktif'}</strong>
+                <span>{cameraStatus.message}</span>
               </div>
             )}
             <span className="stage-corner corner-tl" /><span className="stage-corner corner-tr" />
             <span className="stage-corner corner-bl" /><span className="stage-corner corner-br" />
           </div>
 
+          {cameraStatus.devices.length > 0 && (
+            <div className="camera-device-list" aria-label="Hasil pemindaian kamera">
+              {cameraStatus.devices.map((device) => (
+                <div className="camera-device-row" key={device.device}>
+                  <span className={`camera-device-dot ${device.available ? 'available' : ''}`} />
+                  <strong>{device.name}</strong>
+                  <span>{device.device}</span>
+                  <small>{device.message}</small>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="camera-controls">
-            {cameraActive ? (
-              <button className="button button-secondary" type="button" onClick={stopCamera} aria-label="Matikan kamera" title="Matikan kamera">
-                <Square size={15} /> Hentikan kamera
-              </button>
-            ) : (
-              <button className="button button-primary" type="button" onClick={() => void startCamera()}>
-                <Camera size={16} /> Mulai identifikasi realtime
-              </button>
-            )}
+            <button
+              className="button button-secondary"
+              type="button"
+              onClick={() => void rescanCameras()}
+              disabled={cameraStatus.state === 'scanning'}
+            >
+              <RefreshCw size={15} /> {cameraStatus.state === 'scanning' ? 'Memindai kamera...' : 'Pindai ulang kamera'}
+            </button>
             <label className="button button-secondary upload-button">
               <Upload size={16} /> Unggah foto
               <input
