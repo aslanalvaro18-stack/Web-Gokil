@@ -16,6 +16,8 @@ Script menyiapkan virtual environment/dependency bila belum tersedia, lalu menja
 ./unrun.sh
 ```
 
+Backend otomatis membuka kamera laptop saat `./run.sh` dijalankan. Untuk menjalankan dashboard tanpa kamera, set `AGRO_CAMERA_AUTOSTART=0` sebelum menjalankan script. Tombol di panel kamera dapat mematikan atau memindai ulang kamera.
+
 Log tersimpan di `.run/backend.log` dan `.run/frontend.log`. Script tidak akan menghentikan proses lain jika port 3000 atau 5173 sudah digunakan.
 
 Pastikan iPad dan komputer Linux berada di jaringan yang sama, lalu buka `http://ALAMAT-IP-LINUX:5173` di iPad. Alamat IP Linux dapat dilihat dengan `hostname -I`. Vite meneruskan `/api` ke backend lokal di port 3000.
