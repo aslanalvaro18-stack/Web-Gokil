@@ -101,6 +101,8 @@ curl 'http://localhost:3000/api/readings?device_id=alat-1&limit=20'
 
 Katalog komponen tidak mengasumsikan pembagian fisik. Komponen perkiraan dapat didaftarkan dengan `device_id: null`, `confirmed: false`, dan `enabled: false`; tandai pemetaan terkonfirmasi hanya setelah wiring dan unit pemilik diverifikasi. Contoh placeholder motor:
 
+Saat database pertama kali dibuat, backend menambahkan enam baris inventaris agregat: motor DC sekitar 4, servo 6, sensor cahaya 2, sensor suara 4, IR photoreflector belum pasti, dan sensor lain belum terkonfirmasi. Semua baris itu tidak memiliki pemilik unit, tidak terkonfirmasi, dan tidak dapat dikendalikan; pecah menjadi komponen fisik setelah daftar final tersedia.
+
 ```bash
 curl -X POST http://localhost:3000/api/components \
   -H 'Content-Type: application/json' \
