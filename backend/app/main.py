@@ -158,7 +158,10 @@ def create_app(
     app.state.weather_provider = weather_provider or get_pakem_weather
     app.state.camera_service = camera_service
     app.state.prediction_model_ready = predictor is not None or (
-        model_path.is_file() and labels_path.is_file() and find_spec('tensorflow') is not None
+        model_path.is_file()
+        and labels_path.is_file()
+        and find_spec('tensorflow') is not None
+        and find_spec('tf_keras') is not None
     )
     app.state.prediction_model_error = (
         None if app.state.prediction_model_ready else 'Model, labels, atau TensorFlow belum tersedia.'

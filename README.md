@@ -181,7 +181,7 @@ Log lengkap termasuk telemetri, sesi mulai/selesai, perubahan mode, command, ACK
 
 ## Model Teachable Machine
 
-Backend mendukung model **image classification** Teachable Machine yang diekspor sebagai Keras `keras_model.h5` beserta `labels.txt`. `./run.sh` otomatis memakai pasangan file di root proyek atau `backend/models/teachable_machine/`, lalu memasang TensorFlow jika model tersedia.
+Backend mendukung model **image classification** Teachable Machine yang diekspor sebagai Keras `keras_model.h5` beserta `labels.txt`. `./run.sh` otomatis memakai pasangan file di root proyek atau `backend/models/teachable_machine/`, lalu memasang TensorFlow dan runtime Keras legacy untuk kompatibilitas model jika tersedia.
 
 ```bash
 cd backend

@@ -36,20 +36,20 @@ class TeachableMachineClassifier:
             )
 
         try:
-            import tensorflow as tf
+            import tf_keras
         except ImportError as error:
             raise ModelUnavailableError(
-                'TensorFlow belum terpasang. Instal backend/requirements-ml.txt.'
+                'Runtime TensorFlow/Keras belum terpasang. Instal backend/requirements-ml.txt.'
             ) from error
 
         try:
-            class CompatibleDepthwiseConv2D(tf.keras.layers.DepthwiseConv2D):
+            class CompatibleDepthwiseConv2D(tf_keras.layers.DepthwiseConv2D):
                 def __init__(self, *args, groups=1, **kwargs):
                     if groups != 1:
                         raise ValueError('Only groups=1 is supported for this legacy layer.')
                     super().__init__(*args, **kwargs)
 
-            self._model = tf.keras.models.load_model(
+            self._model = tf_keras.models.load_model(
                 self.model_path,
                 compile=False,
                 custom_objects={'DepthwiseConv2D': CompatibleDepthwiseConv2D},

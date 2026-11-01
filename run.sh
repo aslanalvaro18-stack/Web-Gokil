@@ -65,7 +65,7 @@ if [[ -z "${AGRO_LABELS_PATH:-}" && ! -f "$LABELS_PATH" && -f "$ROOT_DIR/labels.
   LABELS_PATH="$ROOT_DIR/labels.txt"
 fi
 if [[ -f "$MODEL_PATH" && -f "$LABELS_PATH" ]] && \
-  ! "$VENV_DIR/bin/python" -c 'import tensorflow' >/dev/null 2>&1; then
+  ! "$VENV_DIR/bin/python" -c 'import tensorflow, tf_keras' >/dev/null 2>&1; then
   "$VENV_DIR/bin/python" -m pip install -r "$BACKEND_DIR/requirements-ml.txt"
 fi
 
