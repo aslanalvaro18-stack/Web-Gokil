@@ -93,7 +93,7 @@ export default function MachineOverview({ devices, theme }: MachineOverviewProps
       <div className="machine-overview-body">
         <div className="machine-scene" role="img" aria-label="Visual skematis enam Core Unit ArtecRobo 2.0">
           {webglAvailable ? (
-            <Canvas camera={{ position: [9, 8, 12], fov: 36 }} dpr={[1, 1.5]}>
+            <Canvas camera={{ position: [9, 8, 12], fov: 36 }} dpr={[1, 1.5]} gl={{ preserveDrawingBuffer: true }}>
               <color attach="background" args={[theme === 'dark' ? '#121a16' : '#e9eee7']} />
               <Scene devices={devices} theme={theme} />
             </Canvas>
