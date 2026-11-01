@@ -1,5 +1,5 @@
 import { Canvas } from '@react-three/fiber'
-import { Html, OrbitControls } from '@react-three/drei'
+import { OrbitControls } from '@react-three/drei'
 import { useState } from 'react'
 
 type Unit = {
@@ -25,16 +25,16 @@ function statusColor(unit?: Unit) {
 function CoreUnit({ unit, index }: { unit?: Unit; index: number }) {
   const column = index % 3
   const row = Math.floor(index / 3)
-  const position: [number, number, number] = [(column - 1) * 2.25, 0, (row - 0.5) * 2.05]
+  const position: [number, number, number] = [(column - 1) * 2.75, 0, (row - 0.5) * 2.6]
   const color = statusColor(unit)
 
   return (
     <group position={position}>
-      <mesh position={[0, 0, 0]} castShadow receiveShadow>
+      <mesh position={[0, 0, 0]}>
         <boxGeometry args={[1.5, 0.34, 1.15]} />
         <meshStandardMaterial color="#253b32" roughness={0.45} metalness={0.18} />
       </mesh>
-      <mesh position={[0, 0.23, 0]} castShadow>
+      <mesh position={[0, 0.23, 0]}>
         <boxGeometry args={[1.12, 0.16, 0.78]} />
         <meshStandardMaterial color={color} roughness={0.4} metalness={0.12} />
       </mesh>
@@ -42,12 +42,6 @@ function CoreUnit({ unit, index }: { unit?: Unit; index: number }) {
         <boxGeometry args={[0.26, 0.05, 0.26]} />
         <meshStandardMaterial color="#f0f3db" emissive={color} emissiveIntensity={0.24} />
       </mesh>
-      <Html position={[0, 0.82, 0]} center distanceFactor={8}>
-        <div className="machine-unit-label">
-          <strong>{unit?.name ?? `Core Unit ${index + 1}`}</strong>
-          <span>{unit?.device_id ?? UNIT_IDS[index]}</span>
-        </div>
-      </Html>
     </group>
   )
 }
@@ -57,7 +51,7 @@ function Scene({ devices }: MachineOverviewProps) {
   return (
     <>
       <ambientLight intensity={1.7} />
-      <directionalLight position={[4, 8, 5]} intensity={2.2} castShadow />
+      <directionalLight position={[4, 8, 5]} intensity={2.2} />
       <directionalLight position={[-5, 4, -4]} intensity={0.8} color="#91ad83" />
       <gridHelper args={[12, 16, '#829385', '#c4cec4']} position={[0, -0.72, 0]} />
       {UNIT_IDS.map((deviceId, index) => (
@@ -99,7 +93,7 @@ export default function MachineOverview({ devices, theme }: MachineOverviewProps
       <div className="machine-overview-body">
         <div className="machine-scene" role="img" aria-label="Visual skematis enam Core Unit ArtecRobo 2.0">
           {webglAvailable ? (
-            <Canvas camera={{ position: [8, 7, 9], fov: 36 }} dpr={[1, 1.5]} shadows>
+            <Canvas camera={{ position: [9, 8, 12], fov: 36 }} dpr={[1, 1.5]}>
               <color attach="background" args={[theme === 'dark' ? '#121a16' : '#e9eee7']} />
               <Scene devices={devices} theme={theme} />
             </Canvas>
@@ -126,6 +120,24 @@ export default function MachineOverview({ devices, theme }: MachineOverviewProps
           <div className="inventory-row"><span>Sensor suara</span><strong>4</strong></div>
           <div className="inventory-row"><span>IR photoreflector</span><strong>?</strong></div>
           <p>Belum dibagi per unit. Sensor dan aktuator yang belum dikonfirmasi tidak ditampilkan sebagai posisi fisik.</p>
+          <div className="machine-unit-list" aria-label="Status enam Core Unit">
+            {UNIT_IDS.map((deviceId, index) => {
+              const unit = devices.find((device) => device.device_id === deviceId)
+              const status = unit?.connection_status === 'online' && unit.status === 'hidup'
+                ? 'Online'
+                : unit?.connection_status === 'stale'
+                  ? 'Terlambat'
+                  : 'Belum aktif'
+              return (
+                <div className="machine-unit-status" key={deviceId}>
+                  <i style={{ backgroundColor: statusColor(unit) }} />
+                  <span>Core Unit {index + 1}</span>
+                  <small>{deviceId}</small>
+                  <strong>{status}</strong>
+                </div>
+              )
+            })}
+          </div>
           <div className="machine-legend">
             <span><i className="legend-online" /> Online</span>
             <span><i className="legend-stale" /> Terlambat</span>
