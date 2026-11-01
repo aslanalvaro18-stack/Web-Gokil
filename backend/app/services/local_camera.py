@@ -44,6 +44,11 @@ class LocalCameraService:
         except OSError:
             return device_name
 
+    @staticmethod
+    def _is_virtual_camera(name: str) -> bool:
+        normalized_name = name.casefold()
+        return any(marker in normalized_name for marker in ('iriun', 'loopback', 'virtual', 'obs'))
+
     def _load_cv2(self):
         if self._cv2 is None:
             self._cv2 = importlib.import_module('cv2')
@@ -119,7 +124,6 @@ class LocalCameraService:
             return None
 
         devices = []
-        selected_path = None
         for device_path in paths:
             device = {
                 'device': device_path,
@@ -141,8 +145,6 @@ class LocalCameraService:
                     if ok and frame is not None:
                         device['available'] = True
                         device['message'] = 'Kamera siap.'
-                        if selected_path is None:
-                            selected_path = device_path
                     else:
                         device['message'] = 'Tidak menghasilkan frame video.'
             except Exception as error:
@@ -153,6 +155,16 @@ class LocalCameraService:
             devices.append(device)
             self._set_status(devices=devices)
 
+        available_devices = [device for device in devices if device['available']]
+        selected_device = next(
+            (
+                device
+                for device in available_devices
+                if not self._is_virtual_camera(device['name'])
+            ),
+            available_devices[0] if available_devices else None,
+        )
+        selected_path = selected_device['device'] if selected_device else None
         if selected_path is None:
             details = '; '.join(
                 f"{device['device']}: {device['message']}" for device in devices
