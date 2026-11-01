@@ -80,7 +80,22 @@ def initialize_database(database_path: Path) -> None:
                 status TEXT NOT NULL DEFAULT 'pending',
                 requested_at TEXT NOT NULL,
                 completed_at TEXT,
-                detail TEXT NOT NULL DEFAULT ''
+                detail TEXT NOT NULL DEFAULT '',
+                device_id TEXT,
+                component_id TEXT
+            );
+            CREATE TABLE IF NOT EXISTS device_components (
+                component_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                component_type TEXT NOT NULL,
+                device_id TEXT,
+                confirmed INTEGER NOT NULL DEFAULT 0,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                command_values TEXT NOT NULL DEFAULT '[]',
+                safe_value TEXT,
+                current_value TEXT,
+                target_value TEXT,
+                updated_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS operation_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,6 +127,17 @@ def initialize_database(database_path: Path) -> None:
             connection.execute(
                 "ALTER TABLE device_status ADD COLUMN name TEXT NOT NULL DEFAULT ''"
             )
+        command_columns = {
+            row['name'] for row in connection.execute('PRAGMA table_info(actuator_commands)')
+        }
+        if 'device_id' not in command_columns:
+            connection.execute('ALTER TABLE actuator_commands ADD COLUMN device_id TEXT')
+        if 'component_id' not in command_columns:
+            connection.execute('ALTER TABLE actuator_commands ADD COLUMN component_id TEXT')
+        connection.execute(
+            'CREATE INDEX IF NOT EXISTS actuator_device_pending_idx '
+            'ON actuator_commands (device_id, status, id)'
+        )
         connection.execute("UPDATE device_status SET name = device_id WHERE name = ''")
         now = datetime.now(timezone.utc).isoformat(timespec='seconds')
         connection.execute(
@@ -154,6 +180,108 @@ def list_device_status(database_path: Path, stale_after_seconds: int = 30) -> li
             'SELECT device_id, name, status, last_seen FROM device_status ORDER BY device_id'
         ).fetchall()
     return [_device_status_with_freshness(dict(row), stale_after_seconds) for row in rows]
+
+
+def get_device_status(database_path: Path, device_id: str) -> dict | None:
+    with _connect(database_path) as connection:
+        row = connection.execute(
+            'SELECT device_id, name, status, last_seen FROM device_status WHERE device_id = ?',
+            (device_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def _decode_device_component(row: sqlite3.Row | dict) -> dict:
+    component = dict(row)
+    component['confirmed'] = bool(component['confirmed'])
+    component['enabled'] = bool(component['enabled'])
+    component['command_values'] = json.loads(component['command_values'])
+    return component
+
+
+def list_device_components(database_path: Path, device_id: str | None = None) -> list[dict]:
+    with _connect(database_path) as connection:
+        if device_id is None:
+            rows = connection.execute(
+                'SELECT * FROM device_components ORDER BY component_id'
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                'SELECT * FROM device_components WHERE device_id = ? ORDER BY component_id',
+                (device_id,),
+            ).fetchall()
+    return [_decode_device_component(row) for row in rows]
+
+
+def get_device_component(database_path: Path, component_id: str) -> dict | None:
+    with _connect(database_path) as connection:
+        row = connection.execute(
+            'SELECT * FROM device_components WHERE component_id = ?', (component_id,)
+        ).fetchone()
+    return _decode_device_component(row) if row else None
+
+
+def create_device_component(database_path: Path, component: dict) -> dict | None:
+    now = datetime.now(timezone.utc).isoformat(timespec='seconds')
+    try:
+        with _connect(database_path) as connection:
+            connection.execute(
+                '''
+                INSERT INTO device_components
+                    (component_id, name, component_type, device_id, confirmed, enabled,
+                     command_values, safe_value, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''',
+                (
+                    component['component_id'],
+                    component['name'],
+                    component['component_type'],
+                    component['device_id'],
+                    int(component['confirmed']),
+                    int(component['enabled']),
+                    json.dumps(component['command_values']),
+                    component['safe_value'],
+                    now,
+                ),
+            )
+            row = connection.execute(
+                'SELECT * FROM device_components WHERE component_id = ?',
+                (component['component_id'],),
+            ).fetchone()
+    except sqlite3.IntegrityError:
+        return None
+    return _decode_device_component(row)
+
+
+def update_device_component(database_path: Path, component: dict) -> dict | None:
+    now = datetime.now(timezone.utc).isoformat(timespec='seconds')
+    with _connect(database_path) as connection:
+        cursor = connection.execute(
+            '''
+            UPDATE device_components
+            SET name = ?, component_type = ?, device_id = ?, confirmed = ?, enabled = ?,
+                command_values = ?, safe_value = ?, updated_at = ?
+            WHERE component_id = ?
+            ''',
+            (
+                component['name'],
+                component['component_type'],
+                component['device_id'],
+                int(component['confirmed']),
+                int(component['enabled']),
+                json.dumps(component['command_values']),
+                component['safe_value'],
+                now,
+                component['component_id'],
+            ),
+        )
+        if cursor.rowcount == 0:
+            return None
+        row = connection.execute(
+            'SELECT * FROM device_components WHERE component_id = ?',
+            (component['component_id'],),
+        ).fetchone()
+    return _decode_device_component(row)
 
 
 def create_device(
@@ -552,23 +680,37 @@ def acknowledge_actuator_command(
     actual_position: str,
     success: bool,
     detail: str = '',
+    device_id: str | None = None,
 ) -> dict | None:
     now = datetime.now(timezone.utc).isoformat(timespec='seconds')
     with _connect(database_path) as connection:
         command = connection.execute(
             'SELECT * FROM actuator_commands WHERE id = ?', (command_id,)
         ).fetchone()
-        if not command or command['status'] != 'pending':
+        if (
+            not command
+            or command['status'] != 'pending'
+            or (device_id is not None and command['device_id'] != device_id)
+        ):
             return None
         status = 'acknowledged' if success else 'failed'
         connection.execute(
             'UPDATE actuator_commands SET status = ?, completed_at = ?, detail = ? WHERE id = ?',
             (status, now, detail, command_id),
         )
-        connection.execute(
-            'UPDATE actuator_state SET current_position = ?, updated_at = ? WHERE name = ?',
-            (actual_position, now, command['actuator']),
-        )
+        if success:
+            connection.execute(
+                'UPDATE actuator_state SET current_position = ?, updated_at = ? WHERE name = ?',
+                (actual_position, now, command['actuator']),
+            )
+            if command['component_id']:
+                connection.execute(
+                    '''
+                    UPDATE device_components SET current_value = ?, updated_at = ?
+                    WHERE component_id = ? AND device_id = ?
+                    ''',
+                    (actual_position, now, command['component_id'], command['device_id']),
+                )
         event_type = 'actuator_acknowledged' if success else 'actuator_failed'
         connection.execute(
             '''
@@ -599,6 +741,118 @@ def list_pending_commands(database_path: Path, limit: int) -> list[dict]:
             (limit,),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def list_pending_device_commands(database_path: Path, device_id: str, limit: int) -> list[dict]:
+    expire_pending_commands(database_path, COMMAND_TIMEOUT_SECONDS)
+    with _connect(database_path) as connection:
+        rows = connection.execute(
+            '''
+            SELECT * FROM actuator_commands
+            WHERE status = 'pending' AND device_id = ? ORDER BY id LIMIT ?
+            ''',
+            (device_id, limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def queue_device_component_command(
+    database_path: Path,
+    device_id: str,
+    component_id: str,
+    position: str,
+    source: str,
+    stale_after_seconds: int,
+) -> dict:
+    now_datetime = datetime.now(timezone.utc)
+    now = now_datetime.isoformat(timespec='seconds')
+    with _connect(database_path) as connection:
+        device = connection.execute(
+            'SELECT status, last_seen FROM device_status WHERE device_id = ?',
+            (device_id,),
+        ).fetchone()
+        if device is None:
+            raise KeyError('ID alat belum terdaftar.')
+        if device['status'] != 'hidup' or device['last_seen'] is None:
+            raise ValueError('Alat belum melaporkan status hidup.')
+        last_seen = datetime.fromisoformat(device['last_seen'])
+        if last_seen.tzinfo is None:
+            last_seen = last_seen.replace(tzinfo=timezone.utc)
+        if (now_datetime - last_seen).total_seconds() >= stale_after_seconds:
+            raise ValueError('Alat tidak online; command ditolak.')
+
+        component = connection.execute(
+            'SELECT * FROM device_components WHERE component_id = ? AND device_id = ?',
+            (component_id, device_id),
+        ).fetchone()
+        if component is None:
+            raise KeyError('Komponen tidak terdaftar pada alat ini.')
+        if component['component_type'] not in {'dc_motor', 'servo', 'actuator'}:
+            raise ValueError('Komponen ini bukan aktuator yang dapat dikendalikan.')
+        if not component['confirmed'] or not component['enabled']:
+            raise ValueError('Mapping aktuator belum dikonfirmasi dan diaktifkan.')
+        command_values = json.loads(component['command_values'])
+        if component['safe_value'] not in command_values:
+            raise ValueError('Konfigurasi posisi aman aktuator belum valid.')
+        if position not in command_values:
+            raise ValueError('Nilai command tidak diizinkan untuk aktuator ini.')
+
+        superseded = connection.execute(
+            '''
+            UPDATE actuator_commands
+            SET status = 'superseded', completed_at = ?, detail = 'Superseded by newer target'
+            WHERE status = 'pending' AND device_id = ? AND component_id = ?
+            ''',
+            (now, device_id, component_id),
+        ).rowcount
+        cursor = connection.execute(
+            '''
+            INSERT INTO actuator_commands
+                (actuator, position, source, requested_at, detail, device_id, component_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (component_id, position, source, now, '', device_id, component_id),
+        )
+        connection.execute(
+            '''
+            UPDATE device_components SET target_value = ?, updated_at = ?
+            WHERE component_id = ? AND device_id = ?
+            ''',
+            (position, now, component_id, device_id),
+        )
+        connection.execute(
+            '''
+            INSERT INTO operation_events
+                (event_type, source, actuator, value, detail, occurred_at)
+            VALUES ('actuator_commanded', ?, ?, ?, ?, ?)
+            ''',
+            (
+                source,
+                component_id,
+                position,
+                json.dumps({'command_id': cursor.lastrowid, 'device_id': device_id}),
+                now,
+            ),
+        )
+        if superseded:
+            connection.execute(
+                '''
+                INSERT INTO operation_events
+                    (event_type, source, actuator, value, detail, occurred_at)
+                VALUES ('actuator_commands_superseded', ?, ?, ?, ?, ?)
+                ''',
+                (
+                    source,
+                    component_id,
+                    position,
+                    json.dumps({'count': superseded, 'device_id': device_id}),
+                    now,
+                ),
+            )
+        row = connection.execute(
+            'SELECT * FROM actuator_commands WHERE id = ?', (cursor.lastrowid,)
+        ).fetchone()
+    return dict(row)
 
 
 def expire_pending_commands(database_path: Path, timeout_seconds: int) -> int:

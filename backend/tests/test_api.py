@@ -165,6 +165,95 @@ def test_unacknowledged_command_times_out_and_is_logged(tmp_path: Path) -> None:
     assert late_ack.status_code == 404
 
 
+def test_device_commands_are_authenticated_and_scoped_to_component_owner(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        'AGRO_DEVICE_TOKENS',
+        '{"alat-1":"device-token-1","alat-2":"device-token-2"}',
+    )
+    app = create_app(tmp_path / 'test.db', FakeClassifier())
+    with TestClient(app) as client:
+        for device_id in ('alat-1', 'alat-2'):
+            client.post(
+                '/api/devices/status',
+                json={'device_id': device_id, 'status': 'hidup'},
+            )
+        component = client.post(
+            '/api/components',
+            json={
+                'component_id': 'elevator-motor-1',
+                'name': 'Motor elevator 1',
+                'component_type': 'dc_motor',
+                'device_id': 'alat-1',
+                'confirmed': True,
+                'enabled': True,
+                'command_values': ['forward', 'reverse', 'stop'],
+                'safe_value': 'stop',
+            },
+        )
+        command = client.post(
+            '/api/devices/alat-1/components/elevator-motor-1/commands',
+            json={'position': 'forward'},
+        )
+        missing_token = client.get('/api/devices/alat-1/commands')
+        owner_commands = client.get(
+            '/api/devices/alat-1/commands',
+            headers={'X-Device-Token': 'device-token-1'},
+        )
+        other_commands = client.get(
+            '/api/devices/alat-2/commands',
+            headers={'X-Device-Token': 'device-token-2'},
+        )
+        wrong_owner_ack = client.post(
+            f"/api/devices/alat-2/commands/{command.json()['id']}/ack",
+            headers={'X-Device-Token': 'device-token-2'},
+            json={'actual_position': 'forward'},
+        )
+        acknowledged = client.post(
+            f"/api/devices/alat-1/commands/{command.json()['id']}/ack",
+            headers={'X-Device-Token': 'device-token-1'},
+            json={'actual_position': 'forward'},
+        )
+        components = client.get('/api/components?device_id=alat-1').json()
+
+    assert component.status_code == 201
+    assert command.status_code == 200
+    assert missing_token.status_code == 401
+    assert [item['id'] for item in owner_commands.json()] == [command.json()['id']]
+    assert other_commands.json() == []
+    assert wrong_owner_ack.status_code == 404
+    assert acknowledged.status_code == 200
+    assert components[0]['current_value'] == 'forward'
+
+
+def test_unconfirmed_component_cannot_be_controlled(tmp_path: Path) -> None:
+    app = create_app(tmp_path / 'test.db', FakeClassifier())
+    with TestClient(app) as client:
+        client.post(
+            '/api/devices/status',
+            json={'device_id': 'alat-1', 'status': 'hidup'},
+        )
+        component = client.post(
+            '/api/components',
+            json={
+                'component_id': 'unknown-motor',
+                'name': 'Motor belum dipetakan',
+                'component_type': 'dc_motor',
+                'device_id': 'alat-1',
+                'command_values': ['forward', 'stop'],
+            },
+        )
+        command = client.post(
+            '/api/devices/alat-1/components/unknown-motor/commands',
+            json={'position': 'forward'},
+        )
+
+    assert component.status_code == 201
+    assert command.status_code == 409
+
+
 def test_health_returns_plain_text_ok(tmp_path: Path) -> None:
     app = create_app(tmp_path / 'test.db', FakeClassifier())
     with TestClient(app) as client:

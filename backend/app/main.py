@@ -1,4 +1,5 @@
 import asyncio
+import hmac
 import json
 import logging
 import math
@@ -9,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Literal, Protocol
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
@@ -21,6 +22,8 @@ from app.schemas import (
     ControlSnapshot,
     DashboardResponse,
     DeviceCreate,
+    DeviceComponentCreate,
+    DeviceComponentRecord,
     DeviceStatusRecord,
     DeviceStatusUpdate,
     DryingStart,
@@ -91,6 +94,7 @@ def create_app(
         configured_positions = json.loads(
             os.getenv('AGRO_ACTUATOR_POSITIONS', '{"roof":["open","closed"]}')
         )
+        device_tokens = json.loads(os.getenv('AGRO_DEVICE_TOKENS', '{}'))
     except json.JSONDecodeError as error:
         raise ValueError('Konfigurasi posisi aktuator harus berupa JSON valid.') from error
     if not isinstance(safe_positions, dict) or not safe_positions or any(
@@ -109,6 +113,13 @@ def create_app(
         for name, positions in configured_positions.items()
     ):
         raise ValueError('AGRO_ACTUATOR_POSITIONS harus memetakan nama aktuator ke daftar posisi.')
+    if not isinstance(device_tokens, dict) or any(
+        not isinstance(device_id, str)
+        or not isinstance(token, str)
+        or not token
+        for device_id, token in device_tokens.items()
+    ):
+        raise ValueError('AGRO_DEVICE_TOKENS harus memetakan ID alat ke token non-kosong.')
     actuator_positions = {
         name: set(positions) for name, positions in configured_positions.items()
     }
@@ -171,6 +182,16 @@ def create_app(
     app.state.prediction_model_error = (
         None if app.state.prediction_model_ready else 'Model, labels, atau TensorFlow belum tersedia.'
     )
+
+    def authorize_device(device_id: str, supplied_token: str | None) -> None:
+        expected_token = device_tokens.get(device_id)
+        if expected_token is None:
+            raise HTTPException(
+                status_code=503,
+                detail='Command unit belum diaktifkan; konfigurasikan token perangkat.',
+            )
+        if supplied_token is None or not hmac.compare_digest(supplied_token, expected_token):
+            raise HTTPException(status_code=401, detail='Token perangkat tidak valid.')
 
     def camera_status_response() -> dict:
         return {
@@ -400,6 +421,54 @@ def create_app(
         )
         return record
 
+    def normalize_component_payload(payload: DeviceComponentCreate) -> dict:
+        if payload.enabled and not payload.confirmed:
+            raise HTTPException(status_code=422, detail='Komponen harus dikonfirmasi sebelum diaktifkan.')
+        if payload.confirmed and payload.device_id is None:
+            raise HTTPException(status_code=422, detail='Komponen terkonfirmasi harus dipetakan ke unit.')
+        if payload.device_id and database.get_device_status(app.state.database_path, payload.device_id) is None:
+            raise HTTPException(status_code=404, detail='ID alat belum terdaftar.')
+        if payload.component_type in {'dc_motor', 'servo', 'actuator'} and payload.confirmed:
+            if not payload.safe_value or payload.safe_value not in payload.command_values:
+                raise HTTPException(
+                    status_code=422,
+                    detail='Aktuator terkonfirmasi harus memiliki nilai aman yang diizinkan.',
+                )
+        return payload.model_dump()
+
+    @app.get('/api/components', response_model=list[DeviceComponentRecord])
+    def read_components(
+        device_id: str | None = Query(
+            default=None,
+            min_length=1,
+            max_length=40,
+            pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$',
+        ),
+    ) -> list[dict]:
+        return database.list_device_components(app.state.database_path, device_id)
+
+    @app.post('/api/components', response_model=DeviceComponentRecord, status_code=201)
+    def create_component(payload: DeviceComponentCreate) -> dict:
+        component = database.create_device_component(
+            app.state.database_path,
+            normalize_component_payload(payload),
+        )
+        if component is None:
+            raise HTTPException(status_code=409, detail='ID komponen sudah terdaftar.')
+        return component
+
+    @app.put('/api/components/{component_id}', response_model=DeviceComponentRecord)
+    def update_component(component_id: str, payload: DeviceComponentCreate) -> dict:
+        if component_id != payload.component_id:
+            raise HTTPException(status_code=422, detail='ID komponen pada URL dan body harus sama.')
+        component = database.update_device_component(
+            app.state.database_path,
+            normalize_component_payload(payload),
+        )
+        if component is None:
+            raise HTTPException(status_code=404, detail='Komponen belum terdaftar.')
+        return component
+
     @app.post('/api/predictions', response_model=PredictionRecord)
     async def create_prediction(
         image: UploadFile = File(...),
@@ -613,6 +682,76 @@ def create_app(
         limit: int = Query(default=20, ge=1, le=100),
     ) -> list[dict]:
         return database.list_pending_commands(app.state.database_path, limit)
+
+    @app.post('/api/devices/{device_id}/components/{component_id}/commands', response_model=dict)
+    def command_device_component(
+        device_id: str,
+        component_id: str,
+        payload: ActuatorCommandCreate | None = None,
+        position: str | None = Query(default=None, min_length=1, max_length=40),
+    ) -> dict:
+        selected_position = payload.position if payload else position
+        if selected_position is None:
+            raise HTTPException(status_code=422, detail='Tentukan position di URL atau JSON body.')
+        state = database.get_control_snapshot(app.state.database_path)
+        if state['emergency_mode']:
+            raise HTTPException(status_code=409, detail='Emergency aktif; command ditolak.')
+        if state['mode'] != 'manual':
+            raise HTTPException(status_code=409, detail='Pilih mode manual sebelum mengendalikan aktuator.')
+        try:
+            return database.queue_device_component_command(
+                app.state.database_path,
+                device_id,
+                component_id,
+                selected_position,
+                'dashboard',
+                device_stale_seconds,
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
+    @app.get('/api/devices/{device_id}/commands', response_model=list[dict])
+    def read_commands_for_device(
+        device_id: str,
+        limit: int = Query(default=20, ge=1, le=100),
+        device_token: str | None = Header(default=None, alias='X-Device-Token'),
+    ) -> list[dict]:
+        authorize_device(device_id, device_token)
+        if database.get_device_status(app.state.database_path, device_id) is None:
+            raise HTTPException(status_code=404, detail='ID alat belum terdaftar.')
+        return database.list_pending_device_commands(app.state.database_path, device_id, limit)
+
+    @app.post('/api/devices/{device_id}/commands/{command_id}/ack', response_model=dict)
+    def acknowledge_device_scoped_command(
+        device_id: str,
+        command_id: int,
+        payload: CommandAcknowledgement | None = None,
+        actual_position: str | None = Query(default=None, min_length=1, max_length=40),
+        success: bool = Query(default=True),
+        detail: str = Query(default='', max_length=240),
+        device_token: str | None = Header(default=None, alias='X-Device-Token'),
+    ) -> dict:
+        authorize_device(device_id, device_token)
+        if payload is None and actual_position is None:
+            raise HTTPException(status_code=422, detail='Tentukan actual_position di URL atau JSON body.')
+        acknowledgement = payload or CommandAcknowledgement(
+            actual_position=actual_position,
+            success=success,
+            detail=detail,
+        )
+        command = database.acknowledge_actuator_command(
+            app.state.database_path,
+            command_id,
+            acknowledgement.actual_position,
+            acknowledgement.success,
+            acknowledgement.detail,
+            device_id,
+        )
+        if command is None:
+            raise HTTPException(status_code=404, detail='Command tidak ditemukan untuk unit ini atau sudah diproses.')
+        return command
 
     @app.post('/api/device/commands/{command_id}/ack', response_model=dict)
     def acknowledge_device_command(

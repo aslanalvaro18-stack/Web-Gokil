@@ -40,6 +40,23 @@ class DeviceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
 
 
+class DeviceComponentCreate(BaseModel):
+    component_id: str = Field(min_length=1, max_length=80, pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
+    name: str = Field(min_length=1, max_length=100)
+    component_type: str = Field(min_length=1, max_length=60)
+    device_id: str | None = Field(default=None, max_length=40, pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
+    confirmed: bool = False
+    enabled: bool = False
+    command_values: list[str] = Field(default_factory=list, max_length=32)
+    safe_value: str | None = Field(default=None, max_length=40)
+
+
+class DeviceComponentRecord(DeviceComponentCreate):
+    current_value: str | None
+    target_value: str | None
+    updated_at: str
+
+
 class DeviceStatusRecord(BaseModel):
     device_id: str
     name: str
