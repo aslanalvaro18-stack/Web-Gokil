@@ -45,6 +45,7 @@ type DeviceComponent = {
   component_id: string
   name: string
   component_type: string
+  estimated_count: string | null
   device_id: string | null
   confirmed: boolean
   enabled: boolean
@@ -235,6 +236,7 @@ function App() {
   const [componentIdInput, setComponentIdInput] = useState('')
   const [componentNameInput, setComponentNameInput] = useState('')
   const [componentTypeInput, setComponentTypeInput] = useState('other')
+  const [componentEstimatedCountInput, setComponentEstimatedCountInput] = useState('')
   const [componentDeviceInput, setComponentDeviceInput] = useState('')
   const [componentValuesInput, setComponentValuesInput] = useState('')
   const [componentSafeInput, setComponentSafeInput] = useState('')
@@ -509,6 +511,7 @@ function App() {
           component_id: componentIdInput.trim(),
           name: componentNameInput.trim(),
           component_type: componentTypeInput,
+          estimated_count: componentEstimatedCountInput.trim() || null,
           device_id: componentDeviceInput || null,
           confirmed: componentConfirmedInput,
           enabled: componentConfirmedInput && isActuator,
@@ -527,6 +530,7 @@ function App() {
       setComponentIdInput('')
       setComponentNameInput('')
       setComponentTypeInput('other')
+      setComponentEstimatedCountInput('')
       setComponentDeviceInput('')
       setComponentValuesInput('')
       setComponentSafeInput('')
@@ -545,6 +549,7 @@ function App() {
     setComponentIdInput(component.component_id)
     setComponentNameInput(component.name)
     setComponentTypeInput(component.component_type)
+    setComponentEstimatedCountInput(component.estimated_count ?? '')
     setComponentDeviceInput(component.device_id ?? '')
     setComponentValuesInput(component.command_values.join(', '))
     setComponentSafeInput(component.safe_value ?? '')
@@ -558,6 +563,7 @@ function App() {
     setComponentIdInput('')
     setComponentNameInput('')
     setComponentTypeInput('other')
+    setComponentEstimatedCountInput('')
     setComponentDeviceInput('')
     setComponentValuesInput('')
     setComponentSafeInput('')
@@ -798,7 +804,7 @@ function App() {
               <article className="component-row" key={component.component_id}>
                 <div className="component-identity">
                   <strong>{component.name}</strong>
-                  <span>{component.component_id} · {component.component_type}</span>
+                  <span>{component.component_id} · {component.component_type}{component.estimated_count ? ` · ${component.estimated_count}` : ''}</span>
                 </div>
                 <span className={`component-mapping ${component.confirmed ? 'is-confirmed' : ''}`}>
                   {component.device_id ?? 'Belum dipetakan'} · {component.confirmed ? 'TERKONFIRMASI' : 'PERLU VERIFIKASI'}
@@ -835,6 +841,7 @@ function App() {
             <label>ID komponen<input id="component-id" value={componentIdInput} onChange={(event) => setComponentIdInput(event.target.value)} pattern="[A-Za-z0-9][A-Za-z0-9_-]*" maxLength={80} required placeholder="motor-elevator-1" disabled={editingComponentId !== null} /></label>
             <label>Nama<input value={componentNameInput} onChange={(event) => setComponentNameInput(event.target.value)} maxLength={100} required placeholder="Motor elevator" /></label>
             <label>Jenis<select value={componentTypeInput} onChange={(event) => setComponentTypeInput(event.target.value)}><option value="dc_motor">Motor DC</option><option value="servo">Servo</option><option value="light_sensor">Sensor cahaya</option><option value="sound_sensor">Sensor suara</option><option value="ir_photoreflector">IR photoreflector</option><option value="other">Lainnya</option></select></label>
+            <label>Perkiraan jumlah<input value={componentEstimatedCountInput} onChange={(event) => setComponentEstimatedCountInput(event.target.value)} maxLength={32} placeholder="mis. sekitar 4" /></label>
             <label>Core Unit<select value={componentDeviceInput} onChange={(event) => setComponentDeviceInput(event.target.value)}><option value="">Belum dipetakan</option>{devices.map((device) => <option value={device.device_id} key={device.device_id}>{device.name}</option>)}</select></label>
             {['dc_motor', 'servo'].includes(componentTypeInput) && <>
               <label>Nilai command<input value={componentValuesInput} onChange={(event) => setComponentValuesInput(event.target.value)} placeholder="forward, reverse, stop" /></label>

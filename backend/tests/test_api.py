@@ -116,6 +116,53 @@ def test_six_devices_can_report_status(tmp_path: Path) -> None:
     assert duplicate.status_code == 409
 
 
+def test_estimated_component_inventory_stays_unassigned_and_disabled(tmp_path: Path) -> None:
+    app = create_app(tmp_path / 'test.db', FakeClassifier())
+    with TestClient(app) as client:
+        response = client.get('/api/components')
+
+    components = {component['component_id']: component for component in response.json()}
+    assert components['inventory-dc-motors']['estimated_count'] == 'sekitar 4'
+    assert components['inventory-servos']['estimated_count'] == '6'
+    assert components['inventory-light-sensors']['estimated_count'] == '2'
+    assert components['inventory-sound-sensors']['estimated_count'] == '4'
+    assert components['inventory-ir-photoreflectors']['estimated_count'] == 'belum pasti'
+    assert all(component['device_id'] is None for component in components.values())
+    assert all(not component['confirmed'] and not component['enabled'] for component in components.values())
+
+
+def test_legacy_command_table_migrates_to_device_scoped_columns(tmp_path: Path) -> None:
+    database_path = tmp_path / 'legacy.db'
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            '''
+            CREATE TABLE actuator_commands (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                actuator TEXT NOT NULL,
+                position TEXT NOT NULL,
+                source TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                requested_at TEXT NOT NULL,
+                completed_at TEXT,
+                detail TEXT NOT NULL DEFAULT ''
+            )
+            '''
+        )
+
+    app = create_app(database_path, FakeClassifier())
+    with TestClient(app):
+        with sqlite3.connect(database_path) as connection:
+            columns = {
+                row[1] for row in connection.execute('PRAGMA table_info(actuator_commands)')
+            }
+            component_columns = {
+                row[1] for row in connection.execute('PRAGMA table_info(device_components)')
+            }
+
+    assert {'device_id', 'component_id'} <= columns
+    assert {'device_id', 'estimated_count', 'confirmed', 'enabled'} <= component_columns
+
+
 def test_device_status_reports_stale_and_never_seen_connections(tmp_path: Path) -> None:
     database_path = tmp_path / 'test.db'
     app = create_app(database_path, FakeClassifier())

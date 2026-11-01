@@ -88,6 +88,7 @@ def initialize_database(database_path: Path) -> None:
                 component_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 component_type TEXT NOT NULL,
+                estimated_count TEXT,
                 device_id TEXT,
                 confirmed INTEGER NOT NULL DEFAULT 0,
                 enabled INTEGER NOT NULL DEFAULT 0,
@@ -138,6 +139,11 @@ def initialize_database(database_path: Path) -> None:
             'CREATE INDEX IF NOT EXISTS actuator_device_pending_idx '
             'ON actuator_commands (device_id, status, id)'
         )
+        component_columns = {
+            row['name'] for row in connection.execute('PRAGMA table_info(device_components)')
+        }
+        if 'estimated_count' not in component_columns:
+            connection.execute('ALTER TABLE device_components ADD COLUMN estimated_count TEXT')
         connection.execute("UPDATE device_status SET name = device_id WHERE name = ''")
         now = datetime.now(timezone.utc).isoformat(timespec='seconds')
         connection.execute(
@@ -156,6 +162,22 @@ def initialize_database(database_path: Path) -> None:
                 'UPDATE device_status SET name = ? WHERE device_id = ? AND name = ?',
                 (f'Alat {number}', device_id, device_id),
             )
+        connection.executemany(
+            '''
+            INSERT OR IGNORE INTO device_components
+                (component_id, name, component_type, estimated_count, device_id,
+                 confirmed, enabled, command_values, updated_at)
+            VALUES (?, ?, ?, ?, NULL, 0, 0, '[]', ?)
+            ''',
+            [
+                ('inventory-dc-motors', 'Motor DC (perkiraan)', 'dc_motor_estimate', 'sekitar 4', now),
+                ('inventory-servos', 'Servo (perkiraan)', 'servo_estimate', '6', now),
+                ('inventory-light-sensors', 'Sensor cahaya (perkiraan)', 'light_sensor_estimate', '2', now),
+                ('inventory-sound-sensors', 'Sensor suara (perkiraan)', 'sound_sensor_estimate', '4', now),
+                ('inventory-ir-photoreflectors', 'IR photoreflector', 'ir_photoreflector_estimate', 'belum pasti', now),
+                ('inventory-other-sensors', 'Sensor lain', 'unconfirmed_inventory', 'belum terkonfirmasi', now),
+            ],
+        )
 
 
 def _device_status_with_freshness(record: dict, stale_after_seconds: int) -> dict:
@@ -228,14 +250,15 @@ def create_device_component(database_path: Path, component: dict) -> dict | None
             connection.execute(
                 '''
                 INSERT INTO device_components
-                    (component_id, name, component_type, device_id, confirmed, enabled,
+                    (component_id, name, component_type, estimated_count, device_id, confirmed, enabled,
                      command_values, safe_value, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''',
                 (
                     component['component_id'],
                     component['name'],
                     component['component_type'],
+                    component['estimated_count'],
                     component['device_id'],
                     int(component['confirmed']),
                     int(component['enabled']),
@@ -259,13 +282,14 @@ def update_device_component(database_path: Path, component: dict) -> dict | None
         cursor = connection.execute(
             '''
             UPDATE device_components
-            SET name = ?, component_type = ?, device_id = ?, confirmed = ?, enabled = ?,
+            SET name = ?, component_type = ?, estimated_count = ?, device_id = ?, confirmed = ?, enabled = ?,
                 command_values = ?, safe_value = ?, updated_at = ?
             WHERE component_id = ?
             ''',
             (
                 component['name'],
                 component['component_type'],
+                component['estimated_count'],
                 component['device_id'],
                 int(component['confirmed']),
                 int(component['enabled']),
