@@ -72,6 +72,56 @@ def test_sensor_readings_accept_json_and_url_parameters(tmp_path: Path) -> None:
     assert unknown_device.status_code == 404
 
 
+def test_component_condition_reports_keep_history_and_enforce_owner(tmp_path: Path) -> None:
+    app = create_app(tmp_path / 'test.db', FakeClassifier())
+    with TestClient(app) as client:
+        component = client.post(
+            '/api/components',
+            json={
+                'component_id': 'elevator-motor-1',
+                'name': 'Motor elevator 1',
+                'component_type': 'dc_motor',
+                'device_id': 'alat-1',
+            },
+        )
+        first_report = client.post(
+            '/api/devices/alat-1/components/elevator-motor-1/status?condition=normal'
+        )
+        second_report = client.post(
+            '/api/devices/alat-1/components/elevator-motor-1/status?condition=perlu_dicek'
+        )
+        wrong_owner = client.post(
+            '/api/devices/alat-2/components/elevator-motor-1/status?condition=rusak'
+        )
+        unknown_component = client.post(
+            '/api/devices/alat-1/components/missing/status?condition=normal'
+        )
+        empty_condition = client.post(
+            '/api/devices/alat-1/components/elevator-motor-1/status?condition=%20%20'
+        )
+        latest_component = next(
+            item for item in client.get('/api/components').json()
+            if item['component_id'] == 'elevator-motor-1'
+        )
+        history = client.get(
+            '/api/component-condition-reports?device_id=alat-1'
+            '&component_id=elevator-motor-1&limit=10'
+        )
+        component_position = latest_component['current_value']
+
+    assert component.status_code == 201
+    assert first_report.status_code == 201
+    assert first_report.json()['condition'] == 'normal'
+    assert second_report.status_code == 201
+    assert wrong_owner.status_code == 404
+    assert unknown_component.status_code == 404
+    assert empty_condition.status_code == 422
+    assert latest_component['reported_condition'] == 'perlu_dicek'
+    assert latest_component['condition_reported_at'] == second_report.json()['reported_at']
+    assert [item['condition'] for item in history.json()] == ['perlu_dicek', 'normal']
+    assert component_position is None
+
+
 def test_six_devices_can_report_status(tmp_path: Path) -> None:
     app = create_app(tmp_path / 'test.db', FakeClassifier())
     with TestClient(app) as client:

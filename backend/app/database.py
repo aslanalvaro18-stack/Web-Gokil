@@ -98,6 +98,13 @@ def initialize_database(database_path: Path) -> None:
                 target_value TEXT,
                 updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS component_condition_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                component_id TEXT NOT NULL,
+                condition TEXT NOT NULL,
+                reported_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS operation_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 event_type TEXT NOT NULL,
@@ -112,6 +119,8 @@ def initialize_database(database_path: Path) -> None:
                 ON sensor_readings (recorded_at DESC);
             CREATE INDEX IF NOT EXISTS sensor_readings_device_idx
                 ON sensor_readings (device_id, id DESC);
+            CREATE INDEX IF NOT EXISTS component_condition_reports_component_idx
+                ON component_condition_reports (component_id, id DESC);
             '''
         )
         prediction_columns = {
@@ -221,15 +230,27 @@ def _decode_device_component(row: sqlite3.Row | dict) -> dict:
     return component
 
 
+_DEVICE_COMPONENT_SELECT = '''
+    SELECT device_components.*,
+        (SELECT condition FROM component_condition_reports
+         WHERE component_condition_reports.component_id = device_components.component_id
+         ORDER BY component_condition_reports.id DESC LIMIT 1) AS reported_condition,
+        (SELECT reported_at FROM component_condition_reports
+         WHERE component_condition_reports.component_id = device_components.component_id
+         ORDER BY component_condition_reports.id DESC LIMIT 1) AS condition_reported_at
+    FROM device_components
+'''
+
+
 def list_device_components(database_path: Path, device_id: str | None = None) -> list[dict]:
     with _connect(database_path) as connection:
         if device_id is None:
             rows = connection.execute(
-                'SELECT * FROM device_components ORDER BY component_id'
+                f'{_DEVICE_COMPONENT_SELECT} ORDER BY component_id'
             ).fetchall()
         else:
             rows = connection.execute(
-                'SELECT * FROM device_components WHERE device_id = ? ORDER BY component_id',
+                f'{_DEVICE_COMPONENT_SELECT} WHERE device_id = ? ORDER BY component_id',
                 (device_id,),
             ).fetchall()
     return [_decode_device_component(row) for row in rows]
@@ -238,9 +259,63 @@ def list_device_components(database_path: Path, device_id: str | None = None) ->
 def get_device_component(database_path: Path, component_id: str) -> dict | None:
     with _connect(database_path) as connection:
         row = connection.execute(
-            'SELECT * FROM device_components WHERE component_id = ?', (component_id,)
+            f'{_DEVICE_COMPONENT_SELECT} WHERE component_id = ?', (component_id,)
         ).fetchone()
     return _decode_device_component(row) if row else None
+
+
+def create_component_condition_report(
+    database_path: Path,
+    device_id: str,
+    component_id: str,
+    condition: str,
+) -> dict | None:
+    reported_at = datetime.now(timezone.utc).isoformat(timespec='seconds')
+    with _connect(database_path) as connection:
+        component = connection.execute(
+            'SELECT device_id FROM device_components WHERE component_id = ?',
+            (component_id,),
+        ).fetchone()
+        if component is None or component['device_id'] != device_id:
+            return None
+        cursor = connection.execute(
+            '''
+            INSERT INTO component_condition_reports
+                (device_id, component_id, condition, reported_at)
+            VALUES (?, ?, ?, ?)
+            ''',
+            (device_id, component_id, condition, reported_at),
+        )
+        row = connection.execute(
+            'SELECT * FROM component_condition_reports WHERE id = ?',
+            (cursor.lastrowid,),
+        ).fetchone()
+    return dict(row)
+
+
+def list_component_condition_reports(
+    database_path: Path,
+    limit: int = 50,
+    device_id: str | None = None,
+    component_id: str | None = None,
+) -> list[dict]:
+    clauses = []
+    parameters: list[str | int] = []
+    if device_id is not None:
+        clauses.append('device_id = ?')
+        parameters.append(device_id)
+    if component_id is not None:
+        clauses.append('component_id = ?')
+        parameters.append(component_id)
+    where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ''
+    parameters.append(limit)
+    with _connect(database_path) as connection:
+        rows = connection.execute(
+            f'''SELECT * FROM component_condition_reports
+                {where_clause} ORDER BY id DESC LIMIT ?''',
+            parameters,
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def create_device_component(database_path: Path, component: dict) -> dict | None:

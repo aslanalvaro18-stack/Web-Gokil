@@ -20,6 +20,7 @@ from app.schemas import (
     AccessResponse,
     CommandAcknowledgement,
     ControlSnapshot,
+    ComponentConditionReport,
     DashboardResponse,
     DeviceCreate,
     DeviceComponentCreate,
@@ -468,6 +469,60 @@ def create_app(
         if component is None:
             raise HTTPException(status_code=404, detail='Komponen belum terdaftar.')
         return component
+
+    @app.post(
+        '/api/devices/{device_id}/components/{component_id}/status',
+        response_model=ComponentConditionReport,
+        status_code=201,
+    )
+    def report_component_condition(
+        device_id: str,
+        component_id: str,
+        condition: str = Query(min_length=1, max_length=80),
+    ) -> dict:
+        if database.get_device_status(app.state.database_path, device_id) is None:
+            raise HTTPException(status_code=404, detail='ID alat belum terdaftar.')
+        normalized_condition = condition.strip()
+        if not normalized_condition:
+            raise HTTPException(status_code=422, detail='Kondisi komponen tidak boleh kosong.')
+        report = database.create_component_condition_report(
+            app.state.database_path,
+            device_id,
+            component_id,
+            normalized_condition,
+        )
+        if report is None:
+            raise HTTPException(
+                status_code=404,
+                detail='Komponen belum terdaftar atau tidak dipetakan ke unit ini.',
+            )
+        return report
+
+    @app.get(
+        '/api/component-condition-reports',
+        response_model=list[ComponentConditionReport],
+    )
+    def read_component_condition_reports(
+        limit: int = Query(default=20, ge=1, le=100),
+        device_id: str | None = Query(
+            default=None,
+            min_length=1,
+            max_length=40,
+            pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$',
+        ),
+        component_id: str | None = Query(
+            default=None,
+            min_length=1,
+            max_length=80,
+            pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$',
+        ),
+    ) -> list[dict]:
+        return database.list_component_condition_reports(
+            app.state.database_path,
+            limit,
+            device_id,
+            component_id,
+        )
 
     @app.post('/api/predictions', response_model=PredictionRecord)
     async def create_prediction(

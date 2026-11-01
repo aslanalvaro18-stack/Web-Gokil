@@ -56,6 +56,16 @@ class DeviceComponentRecord(DeviceComponentCreate):
     current_value: str | None
     target_value: str | None
     updated_at: str
+    reported_condition: str | None = None
+    condition_reported_at: str | None = None
+
+
+class ComponentConditionReport(BaseModel):
+    id: int
+    device_id: str
+    component_id: str
+    condition: str
+    reported_at: str
 
 
 class DeviceStatusRecord(BaseModel):
