@@ -744,7 +744,7 @@ function App() {
               value={deviceIdInput}
               onChange={(event) => setDeviceIdInput(event.target.value)}
               placeholder="Contoh: pompa-air"
-              pattern="[A-Za-z0-9][A-Za-z0-9_-]*"
+              pattern="[A-Za-z0-9][A-Za-z0-9_]*(-[A-Za-z0-9_]+)*"
               maxLength={40}
               required
             />
@@ -838,7 +838,7 @@ function App() {
             <span>Mapping awal boleh dibiarkan belum terkonfirmasi.</span>
           </div>
           <div className="component-form-grid">
-            <label>ID komponen<input id="component-id" value={componentIdInput} onChange={(event) => setComponentIdInput(event.target.value)} pattern="[A-Za-z0-9][A-Za-z0-9_-]*" maxLength={80} required placeholder="motor-elevator-1" disabled={editingComponentId !== null} /></label>
+            <label>ID komponen<input id="component-id" value={componentIdInput} onChange={(event) => setComponentIdInput(event.target.value)} pattern="[A-Za-z0-9][A-Za-z0-9_]*(-[A-Za-z0-9_]+)*" maxLength={80} required placeholder="motor-elevator-1" disabled={editingComponentId !== null} /></label>
             <label>Nama<input value={componentNameInput} onChange={(event) => setComponentNameInput(event.target.value)} maxLength={100} required placeholder="Motor elevator" /></label>
             <label>Jenis<select value={componentTypeInput} onChange={(event) => setComponentTypeInput(event.target.value)}><option value="dc_motor">Motor DC</option><option value="servo">Servo</option><option value="light_sensor">Sensor cahaya</option><option value="sound_sensor">Sensor suara</option><option value="ir_photoreflector">IR photoreflector</option><option value="other">Lainnya</option></select></label>
             <label>Perkiraan jumlah<input value={componentEstimatedCountInput} onChange={(event) => setComponentEstimatedCountInput(event.target.value)} maxLength={32} placeholder="mis. sekitar 4" /></label>
