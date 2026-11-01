@@ -60,8 +60,16 @@ def create_app(
     resolved_database_path = Path(
         database_path or os.getenv('AGRO_DATABASE_PATH', BACKEND_DIR / 'data/agro_sembada.db')
     )
-    model_path = Path(os.getenv('AGRO_MODEL_PATH', BACKEND_DIR / 'models/teachable_machine/keras_model.h5'))
-    labels_path = Path(os.getenv('AGRO_LABELS_PATH', BACKEND_DIR / 'models/teachable_machine/labels.txt'))
+    default_model_path = BACKEND_DIR / 'models/teachable_machine/keras_model.h5'
+    default_labels_path = BACKEND_DIR / 'models/teachable_machine/labels.txt'
+    project_model_path = BACKEND_DIR.parent / 'keras_model.h5'
+    project_labels_path = BACKEND_DIR.parent / 'labels.txt'
+    model_path = Path(os.getenv('AGRO_MODEL_PATH', default_model_path))
+    labels_path = Path(os.getenv('AGRO_LABELS_PATH', default_labels_path))
+    if not os.getenv('AGRO_MODEL_PATH') and not model_path.is_file() and project_model_path.is_file():
+        model_path = project_model_path
+    if not os.getenv('AGRO_LABELS_PATH') and not labels_path.is_file() and project_labels_path.is_file():
+        labels_path = project_labels_path
     trusted_labels = {
         label.strip().casefold()
         for label in os.getenv('AGRO_TRUSTED_LABELS', 'owner,trusted,terpercaya').split(',')

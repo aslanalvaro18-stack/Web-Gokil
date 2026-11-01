@@ -181,7 +181,7 @@ Log lengkap termasuk telemetri, sesi mulai/selesai, perubahan mode, command, ACK
 
 ## Model Teachable Machine
 
-Backend mendukung model **image classification** Teachable Machine yang diekspor sebagai Keras `keras_model.h5` beserta `labels.txt`. Pasang kedua file ke `backend/models/teachable_machine/`, lalu instal dependency inferensi:
+Backend mendukung model **image classification** Teachable Machine yang diekspor sebagai Keras `keras_model.h5` beserta `labels.txt`. `./run.sh` otomatis memakai pasangan file di root proyek atau `backend/models/teachable_machine/`, lalu memasang TensorFlow jika model tersedia.
 
 ```bash
 cd backend
@@ -189,7 +189,7 @@ source .venv/bin/activate
 pip install -r requirements-ml.txt
 ```
 
-Nama file dan lokasi dapat diubah menggunakan environment variable `AGRO_MODEL_PATH` dan `AGRO_LABELS_PATH`. Jika model belum dipasang, telemetri dan dashboard tetap berfungsi; POST gambar akan memberi status 503 dengan petunjuk konfigurasi.
+Nama file dan lokasi dapat diubah menggunakan environment variable `AGRO_MODEL_PATH` dan `AGRO_LABELS_PATH`. Model di proyek ini memiliki label `Varo` dan `GTW`; jika keduanya boleh dianggap tepercaya, jalankan `AGRO_TRUSTED_LABELS='Varo,GTW' ./run.sh`. Secara default label di luar daftar tepercaya tidak diberi akses.
 
 Database SQLite dibuat otomatis di `backend/data/agro_sembada.db`. Lokasinya dapat diubah dengan `AGRO_DATABASE_PATH`. Untuk origin frontend selain Vite lokal, atur `AGRO_CORS_ORIGINS` sebagai daftar origin yang dipisahkan koma.
 

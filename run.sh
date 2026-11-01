@@ -6,6 +6,8 @@ RUN_DIR="$ROOT_DIR/.run"
 BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
 VENV_DIR="$BACKEND_DIR/.venv"
+MODEL_PATH="${AGRO_MODEL_PATH:-$BACKEND_DIR/models/teachable_machine/keras_model.h5}"
+LABELS_PATH="${AGRO_LABELS_PATH:-$BACKEND_DIR/models/teachable_machine/labels.txt}"
 
 die() {
   printf 'Error: %s\n' "$1" >&2
@@ -56,13 +58,25 @@ if ! "$VENV_DIR/bin/python" -c 'import fastapi, uvicorn, cv2' >/dev/null 2>&1; t
   "$VENV_DIR/bin/python" -m pip install -r "$BACKEND_DIR/requirements.txt"
 fi
 
+if [[ -z "${AGRO_MODEL_PATH:-}" && ! -f "$MODEL_PATH" && -f "$ROOT_DIR/keras_model.h5" ]]; then
+  MODEL_PATH="$ROOT_DIR/keras_model.h5"
+fi
+if [[ -z "${AGRO_LABELS_PATH:-}" && ! -f "$LABELS_PATH" && -f "$ROOT_DIR/labels.txt" ]]; then
+  LABELS_PATH="$ROOT_DIR/labels.txt"
+fi
+if [[ -f "$MODEL_PATH" && -f "$LABELS_PATH" ]] && \
+  ! "$VENV_DIR/bin/python" -c 'import tensorflow' >/dev/null 2>&1; then
+  "$VENV_DIR/bin/python" -m pip install -r "$BACKEND_DIR/requirements-ml.txt"
+fi
+
 if [[ ! -x "$FRONTEND_DIR/node_modules/.bin/vite" ]]; then
   npm --prefix "$FRONTEND_DIR" install
 fi
 
 mkdir -p -- "$RUN_DIR"
 
-AGRO_CAMERA_AUTOSTART="${AGRO_CAMERA_AUTOSTART:-1}" nohup "$VENV_DIR/bin/python" -m uvicorn app.main:app \
+AGRO_MODEL_PATH="$MODEL_PATH" AGRO_LABELS_PATH="$LABELS_PATH" \
+  AGRO_CAMERA_AUTOSTART="${AGRO_CAMERA_AUTOSTART:-1}" nohup "$VENV_DIR/bin/python" -m uvicorn app.main:app \
   --app-dir "$BACKEND_DIR" --host 0.0.0.0 --port 3000 --no-access-log \
   >"$RUN_DIR/backend.log" 2>&1 </dev/null &
 printf '%s\n' "$!" >"$RUN_DIR/backend.pid"
