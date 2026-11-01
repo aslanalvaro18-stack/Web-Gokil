@@ -47,6 +47,7 @@ type CameraStatus = {
   devices: CameraDevice[]
   message: string
   prediction_ready: boolean
+  prediction_message: string | null
 }
 
 type Prediction = {
@@ -132,6 +133,7 @@ const emptyCameraStatus: CameraStatus = {
   devices: [],
   message: 'Menunggu status kamera.',
   prediction_ready: false,
+  prediction_message: null,
 }
 
 const eventLabels: Record<string, string> = {
@@ -599,7 +601,7 @@ function App() {
             </div>
           )}
           {cameraActive && !cameraStatus.prediction_ready && (
-            <p className="camera-model-note">Preview kamera aktif; model Keras belum siap untuk analisis.</p>
+            <p className="camera-model-note">Preview kamera aktif; {cameraStatus.prediction_message ?? 'model Keras belum siap untuk analisis.'}</p>
           )}
 
           <div className="camera-controls">

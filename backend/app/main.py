@@ -129,6 +129,13 @@ def create_app(
     async def lifespan(_: FastAPI):
         database.initialize_database(resolved_database_path)
         database.configure_safe_positions(resolved_database_path, safe_positions)
+        if isinstance(app.state.predictor, TeachableMachineClassifier) and app.state.prediction_model_ready:
+            try:
+                await asyncio.to_thread(app.state.predictor.load)
+            except ModelUnavailableError as error:
+                app.state.prediction_model_ready = False
+                app.state.prediction_model_error = str(error)
+                LOGGER.error('Prediction model unavailable: %s', error)
         if should_autostart_camera:
             camera_service.start()
         automation_task = asyncio.create_task(automation_loop())
@@ -153,11 +160,15 @@ def create_app(
     app.state.prediction_model_ready = predictor is not None or (
         model_path.is_file() and labels_path.is_file() and find_spec('tensorflow') is not None
     )
+    app.state.prediction_model_error = (
+        None if app.state.prediction_model_ready else 'Model, labels, atau TensorFlow belum tersedia.'
+    )
 
     def camera_status_response() -> dict:
         return {
             **camera_service.get_status(),
             'prediction_ready': app.state.prediction_model_ready,
+            'prediction_message': app.state.prediction_model_error,
         }
 
     def access_response(prediction: dict | None) -> dict:

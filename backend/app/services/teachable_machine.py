@@ -16,8 +16,16 @@ class TeachableMachineClassifier:
         self.labels_path = labels_path
         self._model = None
         self._labels: list[str] | None = None
+        self._load_error: ModelUnavailableError | None = None
+
+    def load(self) -> None:
+        self._load_model()
 
     def _load_model(self):
+        if self._model is not None and self._labels is not None:
+            return
+        if self._load_error is not None:
+            raise self._load_error
         if not self.model_path.is_file():
             raise ModelUnavailableError(
                 f'Model belum dipasang. Letakkan keras_model.h5 di {self.model_path}.'
@@ -35,7 +43,17 @@ class TeachableMachineClassifier:
             ) from error
 
         try:
-            self._model = tf.keras.models.load_model(self.model_path, compile=False)
+            class CompatibleDepthwiseConv2D(tf.keras.layers.DepthwiseConv2D):
+                def __init__(self, *args, groups=1, **kwargs):
+                    if groups != 1:
+                        raise ValueError('Only groups=1 is supported for this legacy layer.')
+                    super().__init__(*args, **kwargs)
+
+            self._model = tf.keras.models.load_model(
+                self.model_path,
+                compile=False,
+                custom_objects={'DepthwiseConv2D': CompatibleDepthwiseConv2D},
+            )
             self._labels = [
                 line.strip().split(' ', 1)[-1]
                 for line in self.labels_path.read_text(encoding='utf-8').splitlines()
@@ -44,7 +62,10 @@ class TeachableMachineClassifier:
         except Exception as error:
             self._model = None
             self._labels = None
-            raise ModelUnavailableError(f'Model Teachable Machine tidak dapat dimuat: {error}') from error
+            self._load_error = ModelUnavailableError(
+                f'Model Teachable Machine tidak dapat dimuat: {error}'
+            )
+            raise self._load_error from error
 
         if not self._labels:
             raise ModelUnavailableError('labels.txt kosong atau tidak memiliki kelas.')
