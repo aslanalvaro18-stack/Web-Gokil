@@ -67,7 +67,7 @@ curl -X POST http://localhost:3000/api/devices/status -H 'Content-Type: applicat
 curl -X POST 'http://localhost:3000/api/devices/status?device_id=alat-1&status=hidup'
 ```
 
-Enam ID awal adalah `alat-1` sampai `alat-6`; alat tambahan dapat didaftarkan dari dashboard atau endpoint di atas. Gunakan ID yang sama saat mengirim status. `status` menerima `hidup` atau `mati`. Perangkat bisa memakai contoh URL terakhir tanpa header atau body. Status awal adalah `belum_terhubung`; `last_seen` mencatat waktu POST terakhir.
+Enam ID awal adalah `alat-1` sampai `alat-6`; alat tambahan dapat didaftarkan dari dashboard atau endpoint di atas. Gunakan ID yang sama saat mengirim status. `status` menerima `hidup` atau `mati`. Perangkat bisa memakai contoh URL terakhir tanpa header atau body. Status awal adalah `belum_terhubung`; `last_seen` mencatat waktu POST terakhir. Respons juga menyertakan `connection_status` (`never_seen`, `online`, `stale`) dan `age_seconds`. Batas stale default 30 detik dan dapat diubah dengan `AGRO_DEVICE_STALE_SECONDS`.
 
 Contoh POST telemetri:
 
@@ -177,7 +177,7 @@ curl -X POST 'http://localhost:3000/api/events?event_type=drying_note&value=mula
 curl -X POST 'http://localhost:3000/api/device/commands/12/ack?actual_position=closed'
 ```
 
-Log lengkap termasuk telemetri, sesi mulai/selesai, perubahan mode, command, ACK/gagal, emergency, dan event khusus tersedia di `GET /api/events`.
+Command yang tidak mendapat ACK selama 60 detik otomatis berstatus `timeout` dan dicatat sebagai event `actuator_timeout`; command timeout tidak mengubah posisi aktuator yang tercatat. Log lengkap termasuk telemetri, sesi mulai/selesai, perubahan mode, command, ACK/gagal/timeout, emergency, dan event khusus tersedia di `GET /api/events`.
 
 ## Model Teachable Machine
 

@@ -1,11 +1,12 @@
 import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 
 DEVICE_IDS = tuple(f'alat-{number}' for number in range(1, 7))
+COMMAND_TIMEOUT_SECONDS = 60
 
 
 @contextmanager
@@ -118,15 +119,36 @@ def initialize_database(database_path: Path) -> None:
             )
 
 
-def list_device_status(database_path: Path) -> list[dict]:
+def _device_status_with_freshness(record: dict, stale_after_seconds: int) -> dict:
+    last_seen = record['last_seen']
+    if last_seen is None:
+        return {**record, 'connection_status': 'never_seen', 'age_seconds': None}
+
+    seen_at = datetime.fromisoformat(last_seen)
+    if seen_at.tzinfo is None:
+        seen_at = seen_at.replace(tzinfo=timezone.utc)
+    age = max(0.0, (datetime.now(timezone.utc) - seen_at).total_seconds())
+    return {
+        **record,
+        'connection_status': 'stale' if age >= stale_after_seconds else 'online',
+        'age_seconds': int(age),
+    }
+
+
+def list_device_status(database_path: Path, stale_after_seconds: int = 30) -> list[dict]:
     with _connect(database_path) as connection:
         rows = connection.execute(
             'SELECT device_id, name, status, last_seen FROM device_status ORDER BY device_id'
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [_device_status_with_freshness(dict(row), stale_after_seconds) for row in rows]
 
 
-def create_device(database_path: Path, device_id: str, name: str) -> dict | None:
+def create_device(
+    database_path: Path,
+    device_id: str,
+    name: str,
+    stale_after_seconds: int = 30,
+) -> dict | None:
     try:
         with _connect(database_path) as connection:
             connection.execute(
@@ -139,10 +161,15 @@ def create_device(database_path: Path, device_id: str, name: str) -> dict | None
             ).fetchone()
     except sqlite3.IntegrityError:
         return None
-    return dict(row)
+    return _device_status_with_freshness(dict(row), stale_after_seconds)
 
 
-def update_device_status(database_path: Path, device_id: str, status: str) -> dict:
+def update_device_status(
+    database_path: Path,
+    device_id: str,
+    status: str,
+    stale_after_seconds: int = 30,
+) -> dict | None:
     last_seen = datetime.now(timezone.utc).isoformat(timespec='seconds')
     with _connect(database_path) as connection:
         connection.execute(
@@ -153,7 +180,7 @@ def update_device_status(database_path: Path, device_id: str, status: str) -> di
             'SELECT device_id, name, status, last_seen FROM device_status WHERE device_id = ?',
             (device_id,),
         ).fetchone()
-    return dict(row) if row else None
+    return _device_status_with_freshness(dict(row), stale_after_seconds) if row else None
 
 
 def configure_safe_positions(database_path: Path, safe_positions: dict[str, str]) -> None:
@@ -283,6 +310,7 @@ def list_operation_events(database_path: Path, limit: int) -> list[dict]:
 
 
 def get_control_snapshot(database_path: Path) -> dict:
+    expire_pending_commands(database_path, COMMAND_TIMEOUT_SECONDS)
     now = datetime.now(timezone.utc)
     with _connect(database_path) as connection:
         state_row = connection.execute(
@@ -500,12 +528,51 @@ def acknowledge_actuator_command(
 
 
 def list_pending_commands(database_path: Path, limit: int) -> list[dict]:
+    expire_pending_commands(database_path, COMMAND_TIMEOUT_SECONDS)
     with _connect(database_path) as connection:
         rows = connection.execute(
             "SELECT * FROM actuator_commands WHERE status = 'pending' ORDER BY id LIMIT ?",
             (limit,),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def expire_pending_commands(database_path: Path, timeout_seconds: int) -> int:
+    now = datetime.now(timezone.utc)
+    completed_at = now.isoformat(timespec='seconds')
+    expired_count = 0
+    with _connect(database_path) as connection:
+        rows = connection.execute(
+            "SELECT * FROM actuator_commands WHERE status = 'pending' ORDER BY id"
+        ).fetchall()
+        for row in rows:
+            requested_at = datetime.fromisoformat(row['requested_at'])
+            if requested_at.tzinfo is None:
+                requested_at = requested_at.replace(tzinfo=timezone.utc)
+            if (now - requested_at).total_seconds() < timeout_seconds:
+                continue
+
+            detail = f'Timed out after {timeout_seconds} seconds without ACK'
+            connection.execute(
+                "UPDATE actuator_commands SET status = 'timeout', completed_at = ?, detail = ? WHERE id = ?",
+                (completed_at, detail, row['id']),
+            )
+            connection.execute(
+                '''
+                INSERT INTO operation_events
+                    (event_type, source, actuator, value, detail, occurred_at)
+                VALUES ('actuator_timeout', ?, ?, ?, ?, ?)
+                ''',
+                (
+                    row['source'],
+                    row['actuator'],
+                    row['position'],
+                    json.dumps({'command_id': row['id'], 'timeout_seconds': timeout_seconds}),
+                    completed_at,
+                ),
+            )
+            expired_count += 1
+    return expired_count
 
 
 def start_drying_session(database_path: Path, target_seconds: int, source: str) -> dict:

@@ -31,6 +31,8 @@ type Device = {
   name: string
   status: 'belum_terhubung' | 'hidup' | 'mati'
   last_seen: string | null
+  connection_status: 'never_seen' | 'online' | 'stale'
+  age_seconds: number | null
 }
 
 type CameraDevice = {
@@ -141,6 +143,7 @@ const eventLabels: Record<string, string> = {
   actuator_commanded: 'Perintah aktuator',
   actuator_commands_superseded: 'Perintah digantikan',
   actuator_failed: 'Aktuator gagal',
+  actuator_timeout: 'Perintah tidak mendapat ACK',
   drying_completed: 'Penjemuran selesai',
   drying_started: 'Penjemuran dimulai',
   emergency_activated: 'Emergency aktif',
@@ -172,6 +175,13 @@ function formatTimestamp(value: string | undefined) {
     day: 'numeric',
     month: 'short',
   }).format(date)
+}
+
+function formatAge(seconds: number) {
+  if (seconds < 60) return `${seconds} detik lalu`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} menit lalu`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} jam lalu`
+  return `${Math.floor(seconds / 86400)} hari lalu`
 }
 
 function App() {
@@ -456,7 +466,9 @@ function App() {
   const roof = control.actuators.find((actuator) => actuator.name === 'roof')
   const dryingActive = control.drying_started_at !== null
   const controlsDisabled = busy || control.emergency_mode
-  const activeDeviceCount = devices.filter((device) => device.status === 'hidup').length
+  const activeDeviceCount = devices.filter(
+    (device) => device.status === 'hidup' && device.connection_status === 'online',
+  ).length
 
   return (
     <main className="dashboard-shell">
@@ -512,7 +524,7 @@ function App() {
             <p className="section-index">ALAT TERDAFTAR</p>
             <h2 id="devices-title">Status perangkat</h2>
           </div>
-          <span className="device-summary"><span className="device-summary-dot" />{activeDeviceCount} AKTIF <i>/</i> {devices.length} ALAT</span>
+          <span className="device-summary"><span className={`device-summary-dot ${activeDeviceCount === 0 ? 'is-idle' : ''}`} />{activeDeviceCount} AKTIF <i>/</i> {devices.length} ALAT</span>
         </div>
         <div className="device-layout">
           <div className="device-list" aria-live="polite">
@@ -520,14 +532,14 @@ function App() {
               <p className="empty-devices">Belum ada alat terdaftar.</p>
             ) : devices.map((device) => (
               <div className="device-row" key={device.device_id}>
-                <span className={`device-indicator device-${device.status}`} />
+                <span className={`device-indicator ${device.connection_status === 'stale' ? 'device-stale' : `device-${device.status}`}`} />
                 <div className="device-identity">
                   <strong>{device.name}</strong>
                   <span>{device.device_id}</span>
                 </div>
-                <div className={`device-state device-state-${device.status}`}>
-                  <strong>{device.status === 'hidup' ? 'HIDUP' : device.status === 'mati' ? 'MATI' : 'BELUM TERHUBUNG'}</strong>
-                  <span>{formatTimestamp(device.last_seen ?? undefined)}</span>
+                <div className={`device-state ${device.connection_status === 'stale' ? 'device-state-stale' : `device-state-${device.status}`}`}>
+                  <strong>{device.connection_status === 'stale' ? 'KONEKSI TERLAMBAT' : device.status === 'hidup' ? 'HIDUP' : device.status === 'mati' ? 'MATI' : 'BELUM TERHUBUNG'}</strong>
+                  <span>{device.age_seconds === null ? 'Belum pernah melapor' : `Terakhir ${formatAge(device.age_seconds)}`}</span>
                 </div>
               </div>
             ))}

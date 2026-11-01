@@ -32,6 +32,8 @@ class DeviceStatusRecord(BaseModel):
     name: str
     status: Literal['belum_terhubung', 'hidup', 'mati']
     last_seen: str | None
+    connection_status: Literal['never_seen', 'online', 'stale']
+    age_seconds: int | None
 
 
 class PredictionRecord(BaseModel):

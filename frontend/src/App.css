@@ -50,12 +50,14 @@
 .device-summary { display: inline-flex; align-items: center; gap: 6px; color: var(--green); font: 600 9px/1 var(--mono); }
 .device-summary i { color: #a4aaa2; font-style: normal; }
 .device-summary-dot { width: 7px; height: 7px; border-radius: 50%; background: #45a66a; }
+.device-summary-dot.is-idle { background: #a8aea7; }
 .device-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(220px, 0.8fr); gap: 18px; margin-top: 14px; }
 .device-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 7px; min-width: 0; }
 .device-row { min-width: 0; min-height: 55px; display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid var(--line); background: #fbfcf8; }
 .device-indicator { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #a8aea7; }
 .device-hidup { background: #45a66a; box-shadow: 0 0 0 3px #e4f2e7; }
 .device-mati { background: var(--tomato); box-shadow: 0 0 0 3px #f7e5df; }
+.device-stale { background: #c28a2b; box-shadow: 0 0 0 3px #f7efdc; }
 .device-identity, .device-state { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .device-identity strong { overflow: hidden; color: var(--ink); font: 650 10px/1.2 var(--display); text-overflow: ellipsis; white-space: nowrap; }
 .device-identity span, .device-state span { color: var(--muted); font: 8px/1.2 var(--mono); }
@@ -63,6 +65,7 @@
 .device-state strong { color: #7d857d; font: 600 8px/1.2 var(--mono); }
 .device-state-hidup strong { color: var(--green); }
 .device-state-mati strong { color: #a64c3c; }
+.device-state-stale strong { color: #9a6a18; }
 .empty-devices { grid-column: 1 / -1; margin: 0; padding: 18px 0; color: var(--muted); font-size: 10px; }
 .device-form { display: grid; grid-template-columns: 1fr; gap: 7px; padding-left: 16px; border-left: 1px solid var(--line); }
 .device-form > div { margin-bottom: 3px; }

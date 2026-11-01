@@ -78,6 +78,9 @@ def create_app(
     minimum_confidence = float(os.getenv('AGRO_MIN_CONFIDENCE', '0.85'))
     access_max_age = int(os.getenv('AGRO_ACCESS_MAX_AGE_SECONDS', '15'))
     automation_interval = max(5, int(os.getenv('AGRO_AUTOMATION_INTERVAL_SECONDS', '15')))
+    device_stale_seconds = int(os.getenv('AGRO_DEVICE_STALE_SECONDS', '30'))
+    if device_stale_seconds < 1:
+        raise ValueError('AGRO_DEVICE_STALE_SECONDS harus minimal 1 detik.')
     should_autostart_camera = camera_autostart if camera_autostart is not None else (
         os.getenv('AGRO_CAMERA_AUTOSTART', '0').strip().casefold() in {'1', 'true', 'yes', 'on'}
     )
@@ -288,14 +291,19 @@ def create_app(
 
     @app.get('/api/devices', response_model=list[DeviceStatusRecord])
     def read_device_status() -> list[dict]:
-        return database.list_device_status(app.state.database_path)
+        return database.list_device_status(app.state.database_path, device_stale_seconds)
 
     @app.post('/api/devices', response_model=DeviceStatusRecord, status_code=201)
     def create_device(payload: DeviceCreate) -> dict:
         name = payload.name.strip()
         if not name:
             raise HTTPException(status_code=422, detail='Nama alat tidak boleh kosong.')
-        record = database.create_device(app.state.database_path, payload.device_id, name)
+        record = database.create_device(
+            app.state.database_path,
+            payload.device_id,
+            name,
+            device_stale_seconds,
+        )
         if record is None:
             raise HTTPException(status_code=409, detail='ID alat sudah terdaftar.')
         return record
@@ -324,7 +332,10 @@ def create_app(
             )
 
         record = database.update_device_status(
-            app.state.database_path, resolved_device_id, resolved_status
+            app.state.database_path,
+            resolved_device_id,
+            resolved_status,
+            device_stale_seconds,
         )
         if record is None:
             raise HTTPException(

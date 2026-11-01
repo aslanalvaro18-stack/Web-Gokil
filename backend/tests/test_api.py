@@ -80,6 +80,55 @@ def test_six_devices_can_report_status(tmp_path: Path) -> None:
     assert duplicate.status_code == 409
 
 
+def test_device_status_reports_stale_and_never_seen_connections(tmp_path: Path) -> None:
+    database_path = tmp_path / 'test.db'
+    app = create_app(database_path, FakeClassifier())
+    with TestClient(app) as client:
+        client.post(
+            '/api/devices/status',
+            json={'device_id': 'alat-1', 'status': 'hidup'},
+        )
+        stale_time = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+        with sqlite3.connect(database_path) as connection:
+            connection.execute(
+                'UPDATE device_status SET last_seen = ? WHERE device_id = ?',
+                (stale_time, 'alat-1'),
+            )
+        devices = client.get('/api/devices').json()
+
+    stale_device = next(device for device in devices if device['device_id'] == 'alat-1')
+    never_seen_device = next(device for device in devices if device['device_id'] == 'alat-2')
+    assert stale_device['status'] == 'hidup'
+    assert stale_device['connection_status'] == 'stale'
+    assert stale_device['age_seconds'] >= 60
+    assert never_seen_device['connection_status'] == 'never_seen'
+    assert never_seen_device['age_seconds'] is None
+
+
+def test_unacknowledged_command_times_out_and_is_logged(tmp_path: Path) -> None:
+    database_path = tmp_path / 'test.db'
+    app = create_app(database_path, FakeClassifier())
+    with TestClient(app) as client:
+        client.post('/api/control/actuators/roof', json={'position': 'open'})
+        command = client.get('/api/device/commands').json()[0]
+        stale_time = (datetime.now(timezone.utc) - timedelta(seconds=90)).isoformat()
+        with sqlite3.connect(database_path) as connection:
+            connection.execute(
+                'UPDATE actuator_commands SET requested_at = ? WHERE id = ?',
+                (stale_time, command['id']),
+            )
+        state = client.get('/api/control/state').json()
+        events = client.get('/api/events').json()
+        late_ack = client.post(
+            f"/api/device/commands/{command['id']}/ack",
+            json={'actual_position': 'open'},
+        )
+
+    assert state['pending_commands'] == []
+    assert next(event for event in events if event['event_type'] == 'actuator_timeout')
+    assert late_ack.status_code == 404
+
+
 def test_health_returns_plain_text_ok(tmp_path: Path) -> None:
     app = create_app(tmp_path / 'test.db', FakeClassifier())
     with TestClient(app) as client:
