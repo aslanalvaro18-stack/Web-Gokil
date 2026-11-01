@@ -9,15 +9,18 @@ import {
   CloudSun,
   Droplets,
   Leaf,
+  Moon,
   Plus,
   Radio,
   RefreshCw,
   Send,
   Square,
+  Sun,
   Upload,
   Wifi,
   WifiOff,
 } from 'lucide-react'
+import MachineOverview from './components/MachineOverview'
 import './App.css'
 
 type Telemetry = {
@@ -34,6 +37,20 @@ type SensorReading = {
   value: number
   unit: string | null
   recorded_at: string
+}
+
+type DeviceComponent = {
+  component_id: string
+  name: string
+  component_type: string
+  device_id: string | null
+  confirmed: boolean
+  enabled: boolean
+  command_values: string[]
+  safe_value: string | null
+  current_value: string | null
+  target_value: string | null
+  updated_at: string
 }
 
 type Device = {
@@ -121,6 +138,8 @@ type DashboardData = {
   events: OperationEvent[]
 }
 
+type Theme = 'light' | 'dark'
+
 const emptyDashboard: DashboardData = {
   telemetry: null,
   prediction: null,
@@ -197,6 +216,7 @@ function formatAge(seconds: number) {
 function App() {
   const [dashboard, setDashboard] = useState(emptyDashboard)
   const [devices, setDevices] = useState<Device[]>([])
+  const [components, setComponents] = useState<DeviceComponent[]>([])
   const [sensorReadings, setSensorReadings] = useState<SensorReading[]>([])
   const [cameraStatus, setCameraStatus] = useState(emptyCameraStatus)
   const [apiOnline, setApiOnline] = useState(false)
@@ -210,32 +230,53 @@ function App() {
   const [deviceNameInput, setDeviceNameInput] = useState('')
   const [deviceBusy, setDeviceBusy] = useState(false)
   const [deviceNotice, setDeviceNotice] = useState('')
+  const [componentIdInput, setComponentIdInput] = useState('')
+  const [componentNameInput, setComponentNameInput] = useState('')
+  const [componentTypeInput, setComponentTypeInput] = useState('other')
+  const [componentDeviceInput, setComponentDeviceInput] = useState('')
+  const [componentValuesInput, setComponentValuesInput] = useState('')
+  const [componentSafeInput, setComponentSafeInput] = useState('')
+  const [componentConfirmedInput, setComponentConfirmedInput] = useState(false)
+  const [componentNotice, setComponentNotice] = useState('')
+  const [theme, setTheme] = useState<Theme>(() => {
+    const storedTheme = window.localStorage.getItem('agro-sembada-theme')
+    if (storedTheme === 'light' || storedTheme === 'dark') return storedTheme
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  })
   const cameraImageRef = useRef<HTMLImageElement>(null)
   const cameraTimerRef = useRef<number | null>(null)
   const predictionBusyRef = useRef(false)
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    window.localStorage.setItem('agro-sembada-theme', theme)
+  }, [theme])
 
   useEffect(() => {
     let active = true
 
     const refresh = async () => {
       try {
-        const [dashboardResponse, devicesResponse, readingsResponse] = await Promise.all([
+        const [dashboardResponse, devicesResponse, readingsResponse, componentsResponse] = await Promise.all([
           fetch('/api/dashboard'),
           fetch('/api/devices'),
           fetch('/api/readings?limit=100'),
+          fetch('/api/components'),
         ])
-        if (!dashboardResponse.ok || !devicesResponse.ok || !readingsResponse.ok) {
+        if (!dashboardResponse.ok || !devicesResponse.ok || !readingsResponse.ok || !componentsResponse.ok) {
           throw new Error('Backend tidak merespons')
         }
-        const [data, deviceData, readingData] = await Promise.all([
+        const [data, deviceData, readingData, componentData] = await Promise.all([
           dashboardResponse.json() as Promise<DashboardData>,
           devicesResponse.json() as Promise<Device[]>,
           readingsResponse.json() as Promise<SensorReading[]>,
+          componentsResponse.json() as Promise<DeviceComponent[]>,
         ])
         if (active) {
           setDashboard(data)
           setDevices(deviceData)
           setSensorReadings(readingData)
+          setComponents(componentData)
           setApiOnline(true)
         }
       } catch {
@@ -447,6 +488,45 @@ function App() {
     }
   }
 
+  const registerComponent = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setDeviceBusy(true)
+    setComponentNotice('')
+    const commandValues = componentValuesInput.split(',').map((value) => value.trim()).filter(Boolean)
+    const isActuator = ['dc_motor', 'servo', 'actuator'].includes(componentTypeInput)
+    try {
+      const response = await fetch('/api/components', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          component_id: componentIdInput.trim(),
+          name: componentNameInput.trim(),
+          component_type: componentTypeInput,
+          device_id: componentDeviceInput || null,
+          confirmed: componentConfirmedInput,
+          enabled: componentConfirmedInput && isActuator,
+          command_values: commandValues,
+          safe_value: componentSafeInput.trim() || null,
+        }),
+      })
+      const body = (await response.json()) as DeviceComponent & { detail?: string }
+      if (!response.ok) throw new Error(body.detail ?? 'Komponen gagal ditambahkan.')
+      setComponents((current) => [...current, body].sort((first, second) => first.component_id.localeCompare(second.component_id)))
+      setComponentIdInput('')
+      setComponentNameInput('')
+      setComponentTypeInput('other')
+      setComponentDeviceInput('')
+      setComponentValuesInput('')
+      setComponentSafeInput('')
+      setComponentConfirmedInput(false)
+      setComponentNotice(`${body.name} berhasil ditambahkan.`)
+    } catch (error) {
+      setComponentNotice(error instanceof Error ? error.message : 'Tidak dapat menambahkan komponen.')
+    } finally {
+      setDeviceBusy(false)
+    }
+  }
+
   const postControl = async (path: string, payload: Record<string, unknown>) => {
     setBusy(true)
     setNotice('Mengirim perintah ke backend...')
@@ -473,6 +553,28 @@ function App() {
       return
     }
     void postControl('/api/drying/start', { target_seconds: Math.round(minutes * 60) })
+  }
+
+  const commandComponent = async (component: DeviceComponent, position: string) => {
+    if (!component.device_id) return
+    setBusy(true)
+    try {
+      const response = await fetch(
+        `/api/devices/${encodeURIComponent(component.device_id)}/components/${encodeURIComponent(component.component_id)}/commands`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ position }),
+        },
+      )
+      const body = (await response.json()) as { detail?: string }
+      if (!response.ok) throw new Error(body.detail ?? 'Command aktuator gagal dikirim.')
+      setNotice(`Command ${component.name} diterima server; menunggu unit mengambil dan mengirim ACK.`)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Command aktuator gagal dikirim.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const prediction = dashboard.prediction
@@ -504,9 +606,20 @@ function App() {
           <span className="team-label">PRADNYASIWI QUADTECH</span>
           <span className="school-label">SMPN 4 PAKEM</span>
         </div>
-        <div className={`connection-pill ${apiOnline ? 'is-online' : 'is-offline'}`}>
-          {apiOnline ? <Wifi size={15} /> : <WifiOff size={15} />}
-          <span>{apiOnline ? 'SERVER TERHUBUNG' : 'SERVER TERPUTUS'}</span>
+        <div className="topbar-actions">
+          <button
+            className="theme-toggle"
+            type="button"
+            onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}
+            aria-label={theme === 'dark' ? 'Aktifkan tema terang' : 'Aktifkan tema gelap'}
+            title={theme === 'dark' ? 'Tema terang' : 'Tema gelap'}
+          >
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+          <div className={`connection-pill ${apiOnline ? 'is-online' : 'is-offline'}`}>
+            {apiOnline ? <Wifi size={15} /> : <WifiOff size={15} />}
+            <span>{apiOnline ? 'SERVER TERHUBUNG' : 'SERVER TERPUTUS'}</span>
+          </div>
         </div>
       </header>
 
@@ -599,6 +712,8 @@ function App() {
         </div>
       </section>
 
+      <MachineOverview devices={devices} />
+
       <section className="panel sensor-panel" aria-labelledby="sensor-readings-title">
         <div className="panel-heading compact-heading">
           <div>
@@ -623,6 +738,70 @@ function App() {
             </div>
           ))}
         </div>
+      </section>
+
+      <section className="panel components-panel" aria-labelledby="components-title">
+        <div className="panel-heading compact-heading">
+          <div>
+            <p className="section-index">KATALOG HARDWARE</p>
+            <h2 id="components-title">Komponen per unit</h2>
+          </div>
+          <span className="sensor-reading-count">{components.length} TERDAFTAR</span>
+        </div>
+        <div className="component-list" aria-live="polite">
+          {components.length === 0 ? (
+            <p className="empty-readings">Belum ada komponen yang dipetakan. Tambahkan komponen setelah unit dan wiring-nya terkonfirmasi.</p>
+          ) : components.map((component) => {
+            const owner = devices.find((device) => device.device_id === component.device_id)
+            const canControl = component.confirmed && component.enabled && owner?.connection_status === 'online'
+            return (
+              <article className="component-row" key={component.component_id}>
+                <div className="component-identity">
+                  <strong>{component.name}</strong>
+                  <span>{component.component_id} · {component.component_type}</span>
+                </div>
+                <span className={`component-mapping ${component.confirmed ? 'is-confirmed' : ''}`}>
+                  {component.device_id ?? 'Belum dipetakan'} · {component.confirmed ? 'TERKONFIRMASI' : 'PERLU VERIFIKASI'}
+                </span>
+                {component.command_values.length > 0 && (
+                  <div className="component-command-row">
+                    <span>Posisi {component.current_value ?? 'belum diketahui'} → target {component.target_value ?? '--'}</span>
+                    <div className="component-command-buttons">
+                      {component.command_values.map((value) => (
+                        <button
+                          className="button button-secondary"
+                          key={value}
+                          type="button"
+                          disabled={!canControl || controlsDisabled || control.mode !== 'manual'}
+                          onClick={() => void commandComponent(component, value)}
+                        >{value}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </article>
+            )
+          })}
+        </div>
+        <form className="component-form" onSubmit={(event) => void registerComponent(event)}>
+          <div className="component-form-heading">
+            <strong>Daftarkan komponen</strong>
+            <span>Mapping awal boleh dibiarkan belum terkonfirmasi.</span>
+          </div>
+          <div className="component-form-grid">
+            <label>ID komponen<input value={componentIdInput} onChange={(event) => setComponentIdInput(event.target.value)} pattern="[A-Za-z0-9][A-Za-z0-9_-]*" maxLength={80} required placeholder="motor-elevator-1" /></label>
+            <label>Nama<input value={componentNameInput} onChange={(event) => setComponentNameInput(event.target.value)} maxLength={100} required placeholder="Motor elevator" /></label>
+            <label>Jenis<select value={componentTypeInput} onChange={(event) => setComponentTypeInput(event.target.value)}><option value="dc_motor">Motor DC</option><option value="servo">Servo</option><option value="light_sensor">Sensor cahaya</option><option value="sound_sensor">Sensor suara</option><option value="ir_photoreflector">IR photoreflector</option><option value="other">Lainnya</option></select></label>
+            <label>Core Unit<select value={componentDeviceInput} onChange={(event) => setComponentDeviceInput(event.target.value)}><option value="">Belum dipetakan</option>{devices.map((device) => <option value={device.device_id} key={device.device_id}>{device.name}</option>)}</select></label>
+            {['dc_motor', 'servo'].includes(componentTypeInput) && <>
+              <label>Nilai command<input value={componentValuesInput} onChange={(event) => setComponentValuesInput(event.target.value)} placeholder="forward, reverse, stop" /></label>
+              <label>Nilai aman<input value={componentSafeInput} onChange={(event) => setComponentSafeInput(event.target.value)} placeholder="stop" /></label>
+            </>}
+          </div>
+          <label className="component-confirm-label"><input type="checkbox" checked={componentConfirmedInput} onChange={(event) => setComponentConfirmedInput(event.target.checked)} /> Saya sudah memverifikasi pemetaan fisik dan posisi aman</label>
+          <button className="button button-primary" type="submit" disabled={deviceBusy || !apiOnline}><Plus size={15} /> Simpan komponen</button>
+          {componentNotice && <p className="device-notice" role="status">{componentNotice}</p>}
+        </form>
       </section>
 
       <section className="workspace-grid">
