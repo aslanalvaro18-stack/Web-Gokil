@@ -76,6 +76,16 @@
 .device-form input::placeholder { color: #a4aaa2; }
 .device-form .button { justify-self: start; margin-top: 3px; }
 .device-notice { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.4; }
+.sensor-panel { margin-top: 12px; padding: 17px 19px; }
+.sensor-reading-count { color: var(--muted); font: 600 9px/1 var(--mono); }
+.sensor-reading-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-top: 14px; }
+.sensor-reading-row { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 5px 12px; padding: 9px 10px; border: 1px solid var(--line); background: #fbfcf8; }
+.sensor-reading-identity { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.sensor-reading-identity strong { overflow: hidden; color: var(--ink); font: 650 10px/1.2 var(--display); text-overflow: ellipsis; white-space: nowrap; }
+.sensor-reading-identity span, .sensor-reading-time { color: var(--muted); font: 8px/1.2 var(--mono); }
+.sensor-reading-value { color: var(--green); font: 650 12px/1.2 var(--mono); text-align: right; }
+.sensor-reading-time { grid-column: 1 / -1; }
+.empty-readings { grid-column: 1 / -1; margin: 0; padding: 12px 0; color: var(--muted); font-size: 10px; }
 .bottom-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.85fr); gap: 12px; margin-top: 12px; }
 .control-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.85fr); gap: 12px; margin-top: 12px; }
 .panel { border: 1px solid var(--line); background: var(--paper); min-width: 0; }
@@ -235,6 +245,7 @@
   .devices-panel { margin-top: 9px; padding: 15px; }
   .device-layout { grid-template-columns: 1fr; gap: 14px; }
   .device-list { grid-template-columns: 1fr; }
+  .sensor-reading-list { grid-template-columns: 1fr; }
   .device-form { padding: 14px 0 0; border-top: 1px solid var(--line); border-left: 0; }
   .control-grid { grid-template-columns: 1fr; gap: 9px; margin-top: 9px; }
   .camera-panel, .prediction-panel { min-height: auto; padding: 15px; }

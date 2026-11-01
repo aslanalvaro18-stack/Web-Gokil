@@ -37,6 +37,8 @@ Jika daftar kamera menunjukkan akses ditolak, pastikan pengguna Linux memiliki i
 | `POST` | `/api/camera/stop` | Matikan kamera laptop |
 | `POST` | `/api/telemetry` | Simpan uptime dan status alat |
 | `GET` | `/api/telemetry?limit=20` | Ambil riwayat telemetri, maksimal 100 baris |
+| `POST` | `/api/devices/{id}/readings` | Simpan pembacaan sensor terstruktur dari kit terdaftar |
+| `GET` | `/api/readings?limit=100` | Ambil riwayat pembacaan sensor, opsional filter `device_id` |
 | `POST` | `/api/devices` | Daftarkan alat baru dengan ID dan nama |
 | `POST` | `/api/devices/status` | Terima status `hidup`/`mati` dari alat yang sudah terdaftar |
 | `GET` | `/api/devices` | Ambil status terakhir seluruh alat |
@@ -78,6 +80,16 @@ curl -X POST http://localhost:3000/api/telemetry \
 ```
 
 Perangkat dapat mengirim JSON yang sama. `uptime_seconds` harus bilangan bulat non-negatif; `status` berupa teks, misalnya `running`, `stopped`, atau `unknown`.
+
+Pembacaan sensor disimpan terpisah dari uptime/status. Setiap bacaan mencantumkan `sensor_id`, `sensor_type`, `value`, dan `unit` opsional. Pelaporan sensor juga memperbarui heartbeat kit. `POST` menerima JSON atau parameter URL agar dapat dipakai perangkat yang hanya mengirim parameter:
+
+```bash
+curl -X POST http://localhost:3000/api/devices/alat-1/readings \
+  -H 'Content-Type: application/json' \
+  -d '{"sensor_id":"light-1","sensor_type":"light","value":360,"unit":"lux"}'
+curl -X POST 'http://localhost:3000/api/devices/alat-1/readings?sensor_id=light-1&sensor_type=light&value=360&unit=lux'
+curl 'http://localhost:3000/api/readings?device_id=alat-1&limit=20'
+```
 
 ## Identifikasi wajah dan ArtecRobo 2.0
 

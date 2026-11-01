@@ -36,6 +36,42 @@ def test_telemetry_is_saved_and_returned(tmp_path: Path) -> None:
     assert len(history) == 1
 
 
+def test_sensor_readings_accept_json_and_url_parameters(tmp_path: Path) -> None:
+    app = create_app(tmp_path / 'test.db', FakeClassifier())
+    with TestClient(app) as client:
+        json_reading = client.post(
+            '/api/devices/alat-1/readings',
+            json={
+                'sensor_id': 'light-1',
+                'sensor_type': 'light',
+                'value': 360,
+                'unit': 'lux',
+            },
+        )
+        query_reading = client.post(
+            '/api/devices/alat-2/readings'
+            '?sensor_id=sound-1&sensor_type=sound&value=47&unit=dB'
+        )
+        history = client.get('/api/readings?limit=10').json()
+        device = next(
+            item for item in client.get('/api/devices').json()
+            if item['device_id'] == 'alat-1'
+        )
+        unknown_device = client.post(
+            '/api/devices/alat-7/readings',
+            json={'sensor_id': 'light-1', 'sensor_type': 'light', 'value': 1},
+        )
+
+    assert json_reading.status_code == 201
+    assert json_reading.json()['value'] == 360
+    assert json_reading.json()['unit'] == 'lux'
+    assert query_reading.status_code == 201
+    assert len(history) == 2
+    assert device['status'] == 'hidup'
+    assert device['connection_status'] == 'online'
+    assert unknown_device.status_code == 404
+
+
 def test_six_devices_can_report_status(tmp_path: Path) -> None:
     app = create_app(tmp_path / 'test.db', FakeClassifier())
     with TestClient(app) as client:

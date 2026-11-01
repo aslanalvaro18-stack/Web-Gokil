@@ -26,6 +26,16 @@ type Telemetry = {
   recorded_at: string
 }
 
+type SensorReading = {
+  id: number
+  device_id: string
+  sensor_id: string
+  sensor_type: string
+  value: number
+  unit: string | null
+  recorded_at: string
+}
+
 type Device = {
   device_id: string
   name: string
@@ -187,6 +197,7 @@ function formatAge(seconds: number) {
 function App() {
   const [dashboard, setDashboard] = useState(emptyDashboard)
   const [devices, setDevices] = useState<Device[]>([])
+  const [sensorReadings, setSensorReadings] = useState<SensorReading[]>([])
   const [cameraStatus, setCameraStatus] = useState(emptyCameraStatus)
   const [apiOnline, setApiOnline] = useState(false)
   const [uptimeInput, setUptimeInput] = useState('3600')
@@ -208,18 +219,23 @@ function App() {
 
     const refresh = async () => {
       try {
-        const [dashboardResponse, devicesResponse] = await Promise.all([
+        const [dashboardResponse, devicesResponse, readingsResponse] = await Promise.all([
           fetch('/api/dashboard'),
           fetch('/api/devices'),
+          fetch('/api/readings?limit=100'),
         ])
-        if (!dashboardResponse.ok || !devicesResponse.ok) throw new Error('Backend tidak merespons')
-        const [data, deviceData] = await Promise.all([
+        if (!dashboardResponse.ok || !devicesResponse.ok || !readingsResponse.ok) {
+          throw new Error('Backend tidak merespons')
+        }
+        const [data, deviceData, readingData] = await Promise.all([
           dashboardResponse.json() as Promise<DashboardData>,
           devicesResponse.json() as Promise<Device[]>,
+          readingsResponse.json() as Promise<SensorReading[]>,
         ])
         if (active) {
           setDashboard(data)
           setDevices(deviceData)
+          setSensorReadings(readingData)
           setApiOnline(true)
         }
       } catch {
@@ -469,6 +485,13 @@ function App() {
   const activeDeviceCount = devices.filter(
     (device) => device.status === 'hidup' && device.connection_status === 'online',
   ).length
+  const seenSensors = new Set<string>()
+  const latestSensorReadings = sensorReadings.filter((reading) => {
+    const key = `${reading.device_id}:${reading.sensor_id}`
+    if (seenSensors.has(key)) return false
+    seenSensors.add(key)
+    return true
+  }).slice(0, 12)
 
   return (
     <main className="dashboard-shell">
@@ -573,6 +596,32 @@ function App() {
             </button>
             {deviceNotice && <p className="device-notice" role="status">{deviceNotice}</p>}
           </form>
+        </div>
+      </section>
+
+      <section className="panel sensor-panel" aria-labelledby="sensor-readings-title">
+        <div className="panel-heading compact-heading">
+          <div>
+            <p className="section-index">TELEMETRI SENSOR</p>
+            <h2 id="sensor-readings-title">Pembacaan terbaru</h2>
+          </div>
+          <span className="sensor-reading-count">{latestSensorReadings.length} SENSOR</span>
+        </div>
+        <div className="sensor-reading-list" aria-live="polite">
+          {latestSensorReadings.length === 0 ? (
+            <p className="empty-readings">Belum ada pembacaan sensor.</p>
+          ) : latestSensorReadings.map((reading) => (
+            <div className="sensor-reading-row" key={`${reading.device_id}:${reading.sensor_id}`}>
+              <div className="sensor-reading-identity">
+                <strong>{reading.sensor_id}</strong>
+                <span>{reading.sensor_type} · {reading.device_id}</span>
+              </div>
+              <strong className="sensor-reading-value">
+                {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(reading.value)}{reading.unit ? ` ${reading.unit}` : ''}
+              </strong>
+              <span className="sensor-reading-time">{formatTimestamp(reading.recorded_at)}</span>
+            </div>
+          ))}
         </div>
       </section>
 

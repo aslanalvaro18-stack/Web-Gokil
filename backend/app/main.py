@@ -30,6 +30,8 @@ from app.schemas import (
     OperationEvent,
     OperationEventCreate,
     PredictionRecord,
+    SensorReadingCreate,
+    SensorReadingRecord,
     TelemetryCreate,
     TelemetryRecord,
 )
@@ -288,6 +290,55 @@ def create_app(
     @app.get('/api/telemetry', response_model=list[TelemetryRecord])
     def read_telemetry(limit: int = Query(default=20, ge=1, le=100)) -> list[dict]:
         return database.list_telemetry(app.state.database_path, limit)
+
+    @app.post(
+        '/api/devices/{device_id}/readings',
+        response_model=SensorReadingRecord,
+        status_code=201,
+    )
+    def create_sensor_reading(
+        device_id: str,
+        payload: SensorReadingCreate | None = None,
+        sensor_id: str | None = Query(default=None, min_length=1, max_length=80),
+        sensor_type: str | None = Query(default=None, min_length=1, max_length=80),
+        value: float | None = None,
+        unit: str | None = Query(default=None, max_length=24),
+    ) -> dict:
+        if payload is None:
+            if sensor_id is None or sensor_type is None or value is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail='Tentukan sensor_id, sensor_type, dan value di URL atau JSON body.',
+                )
+            payload = SensorReadingCreate(
+                sensor_id=sensor_id,
+                sensor_type=sensor_type,
+                value=value,
+                unit=unit,
+            )
+        reading = database.save_sensor_reading(
+            app.state.database_path,
+            device_id,
+            payload.sensor_id,
+            payload.sensor_type,
+            payload.value,
+            payload.unit,
+        )
+        if reading is None:
+            raise HTTPException(status_code=404, detail='ID alat belum terdaftar.')
+        return reading
+
+    @app.get('/api/readings', response_model=list[SensorReadingRecord])
+    def read_sensor_readings(
+        limit: int = Query(default=100, ge=1, le=500),
+        device_id: str | None = Query(
+            default=None,
+            min_length=1,
+            max_length=40,
+            pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$',
+        ),
+    ) -> list[dict]:
+        return database.list_sensor_readings(app.state.database_path, limit, device_id)
 
     @app.get('/api/devices', response_model=list[DeviceStatusRecord])
     def read_device_status() -> list[dict]:

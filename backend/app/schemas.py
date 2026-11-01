@@ -17,6 +17,19 @@ class TelemetryRecord(TelemetryCreate):
     recorded_at: str
 
 
+class SensorReadingCreate(BaseModel):
+    sensor_id: str = Field(min_length=1, max_length=80)
+    sensor_type: str = Field(min_length=1, max_length=80)
+    value: float = Field(allow_inf_nan=False)
+    unit: str | None = Field(default=None, max_length=24)
+
+
+class SensorReadingRecord(SensorReadingCreate):
+    id: int
+    device_id: str
+    recorded_at: str
+
+
 class DeviceStatusUpdate(BaseModel):
     device_id: str = Field(min_length=1, max_length=40, pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
     status: Literal['hidup', 'mati']

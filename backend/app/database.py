@@ -35,6 +35,15 @@ def initialize_database(database_path: Path) -> None:
                 status TEXT NOT NULL,
                 recorded_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS sensor_readings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                sensor_id TEXT NOT NULL,
+                sensor_type TEXT NOT NULL,
+                value REAL NOT NULL,
+                unit TEXT,
+                recorded_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS device_status (
                 device_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL DEFAULT '',
@@ -83,6 +92,10 @@ def initialize_database(database_path: Path) -> None:
                 detail TEXT NOT NULL DEFAULT '{}',
                 occurred_at TEXT NOT NULL
             );
+            CREATE INDEX IF NOT EXISTS sensor_readings_recorded_at_idx
+                ON sensor_readings (recorded_at DESC);
+            CREATE INDEX IF NOT EXISTS sensor_readings_device_idx
+                ON sensor_readings (device_id, id DESC);
             '''
         )
         prediction_columns = {
@@ -226,6 +239,57 @@ def latest_telemetry(database_path: Path) -> dict | None:
             'SELECT id, uptime_seconds, status, recorded_at FROM telemetry ORDER BY id DESC LIMIT 1'
         ).fetchone()
     return dict(row) if row else None
+
+
+def save_sensor_reading(
+    database_path: Path,
+    device_id: str,
+    sensor_id: str,
+    sensor_type: str,
+    value: float,
+    unit: str | None,
+) -> dict | None:
+    recorded_at = datetime.now(timezone.utc).isoformat(timespec='seconds')
+    with _connect(database_path) as connection:
+        device = connection.execute(
+            'SELECT device_id FROM device_status WHERE device_id = ?', (device_id,)
+        ).fetchone()
+        if device is None:
+            return None
+        cursor = connection.execute(
+            '''
+            INSERT INTO sensor_readings
+                (device_id, sensor_id, sensor_type, value, unit, recorded_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ''',
+            (device_id, sensor_id, sensor_type, value, unit, recorded_at),
+        )
+        connection.execute(
+            "UPDATE device_status SET status = 'hidup', last_seen = ? WHERE device_id = ?",
+            (recorded_at, device_id),
+        )
+        row = connection.execute(
+            'SELECT * FROM sensor_readings WHERE id = ?', (cursor.lastrowid,)
+        ).fetchone()
+    return dict(row)
+
+
+def list_sensor_readings(
+    database_path: Path,
+    limit: int,
+    device_id: str | None = None,
+) -> list[dict]:
+    with _connect(database_path) as connection:
+        if device_id is None:
+            rows = connection.execute(
+                'SELECT * FROM sensor_readings ORDER BY id DESC LIMIT ?', (limit,)
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                'SELECT * FROM sensor_readings WHERE device_id = ? ORDER BY id DESC LIMIT ?',
+                (device_id, limit),
+            ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def save_prediction(
