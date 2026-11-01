@@ -96,8 +96,15 @@ def test_component_condition_reports_keep_history_and_enforce_owner(tmp_path: Pa
         unknown_component = client.post(
             '/api/devices/alat-1/components/missing/status?condition=normal'
         )
+        unmapped_component = client.post(
+            '/api/devices/alat-1/components/inventory-dc-motors/status?condition=normal'
+        )
         empty_condition = client.post(
             '/api/devices/alat-1/components/elevator-motor-1/status?condition=%20%20'
+        )
+        oversized_condition = client.post(
+            '/api/devices/alat-1/components/elevator-motor-1/status?condition='
+            f'{"x" * 81}'
         )
         latest_component = next(
             item for item in client.get('/api/components').json()
@@ -115,7 +122,9 @@ def test_component_condition_reports_keep_history_and_enforce_owner(tmp_path: Pa
     assert second_report.status_code == 201
     assert wrong_owner.status_code == 404
     assert unknown_component.status_code == 404
+    assert unmapped_component.status_code == 404
     assert empty_condition.status_code == 422
+    assert oversized_condition.status_code == 422
     assert latest_component['reported_condition'] == 'perlu_dicek'
     assert latest_component['condition_reported_at'] == second_report.json()['reported_at']
     assert [item['condition'] for item in history.json()] == ['perlu_dicek', 'normal']
@@ -208,9 +217,15 @@ def test_legacy_command_table_migrates_to_device_scoped_columns(tmp_path: Path) 
             component_columns = {
                 row[1] for row in connection.execute('PRAGMA table_info(device_components)')
             }
+            condition_report_tables = {
+                row[0] for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
 
     assert {'device_id', 'component_id'} <= columns
     assert {'device_id', 'estimated_count', 'confirmed', 'enabled'} <= component_columns
+    assert 'component_condition_reports' in condition_report_tables
 
 
 def test_device_status_reports_stale_and_never_seen_connections(tmp_path: Path) -> None:

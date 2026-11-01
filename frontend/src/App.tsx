@@ -60,6 +60,22 @@ type DeviceComponent = {
   current_value: string | null
   target_value: string | null
   updated_at: string
+  reported_condition: string | null
+  condition_reported_at: string | null
+}
+
+type ComponentConditionReport = {
+  id: number
+  device_id: string
+  component_id: string
+  condition: string
+  reported_at: string
+}
+
+type ComponentConditionHistory = {
+  items: ComponentConditionReport[]
+  loading: boolean
+  error: boolean
 }
 
 type Device = {
@@ -230,6 +246,7 @@ function App() {
   const [dashboard, setDashboard] = useState(emptyDashboard)
   const [devices, setDevices] = useState<Device[]>([])
   const [components, setComponents] = useState<DeviceComponent[]>([])
+  const [componentHistory, setComponentHistory] = useState<Record<string, ComponentConditionHistory>>({})
   const [sensorReadings, setSensorReadings] = useState<SensorReading[]>([])
   const [cameraStatus, setCameraStatus] = useState(emptyCameraStatus)
   const [apiOnline, setApiOnline] = useState(false)
@@ -631,6 +648,36 @@ function App() {
     }
   }
 
+  const loadComponentHistory = async (component: DeviceComponent) => {
+    setComponentHistory((current) => ({
+      ...current,
+      [component.component_id]: {
+        items: current[component.component_id]?.items ?? [],
+        loading: true,
+        error: false,
+      },
+    }))
+    try {
+      const params = new URLSearchParams({ component_id: component.component_id, limit: '10' })
+      const response = await fetch(`/api/component-condition-reports?${params}`)
+      const body = (await response.json()) as ComponentConditionReport[]
+      if (!response.ok) throw new Error('Riwayat kondisi tidak tersedia.')
+      setComponentHistory((current) => ({
+        ...current,
+        [component.component_id]: { items: body, loading: false, error: false },
+      }))
+    } catch {
+      setComponentHistory((current) => ({
+        ...current,
+        [component.component_id]: {
+          items: current[component.component_id]?.items ?? [],
+          loading: false,
+          error: true,
+        },
+      }))
+    }
+  }
+
   const prediction = dashboard.prediction
   const telemetry = dashboard.telemetry
   const access = dashboard.access
@@ -872,6 +919,35 @@ function App() {
                 <button className="component-edit" type="button" onClick={() => editComponent(component)} title={`Edit ${component.name}`} aria-label={`Edit ${component.name}`}>
                   <Pencil size={13} />
                 </button>
+                <div className="component-condition-row">
+                  <span>Kondisi</span>
+                  <strong>{component.reported_condition ?? 'Belum ada laporan'}</strong>
+                  <small>{formatTimestamp(component.condition_reported_at ?? undefined)}</small>
+                </div>
+                <details
+                  className="component-condition-history"
+                  onToggle={(event) => {
+                    if (event.currentTarget.open) void loadComponentHistory(component)
+                  }}
+                >
+                  <summary>Riwayat kondisi</summary>
+                  <div className="component-condition-history-list">
+                    {componentHistory[component.component_id]?.loading ? (
+                      <span>Memuat riwayat...</span>
+                    ) : componentHistory[component.component_id]?.error ? (
+                      <span>Riwayat tidak dapat dimuat.</span>
+                    ) : componentHistory[component.component_id]?.items.length ? (
+                      componentHistory[component.component_id].items.map((report) => (
+                        <div key={report.id}>
+                          <strong>{report.condition}</strong>
+                          <time>{formatTimestamp(report.reported_at)}</time>
+                        </div>
+                      ))
+                    ) : (
+                      <span>Belum ada riwayat kondisi.</span>
+                    )}
+                  </div>
+                </details>
                 {component.command_values.length > 0 && (
                   <div className="component-command-row">
                     <span>Posisi {component.current_value ?? 'belum diketahui'} → target {component.target_value ?? '--'}</span>

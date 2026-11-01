@@ -45,6 +45,8 @@ Jika daftar kamera menunjukkan akses ditolak, pastikan pengguna Linux memiliki i
 | `GET` | `/api/components` | Ambil katalog komponen; opsional filter `device_id` |
 | `POST` | `/api/components` | Daftarkan komponen terkonfirmasi atau placeholder belum dipetakan |
 | `PUT` | `/api/components/{component_id}` | Perbarui pemetaan dan konfigurasi komponen |
+| `POST` | `/api/devices/{device_id}/components/{component_id}/status?condition=normal` | Simpan kondisi komponen yang dilaporkan unit pemilik |
+| `GET` | `/api/component-condition-reports?component_id=...&limit=10` | Ambil riwayat kondisi komponen, terbaru lebih dahulu |
 | `POST` | `/api/devices/{device_id}/components/{component_id}/commands` | Antrekan command hanya untuk aktuator terkonfirmasi pada unit pemilik |
 | `GET` | `/api/devices/{device_id}/commands` | Ambil command milik unit; wajib header `X-Device-Token` |
 | `POST` | `/api/devices/{device_id}/commands/{id}/ack` | ACK command milik unit; wajib header `X-Device-Token` |
@@ -96,6 +98,20 @@ curl -X POST http://localhost:3000/api/devices/alat-1/readings \
 curl -X POST 'http://localhost:3000/api/devices/alat-1/readings?sensor_id=light-1&sensor_type=light&value=360&unit=lux'
 curl 'http://localhost:3000/api/readings?device_id=alat-1&limit=20'
 ```
+
+## Kondisi komponen IoT
+
+Setiap komponen harus sudah terdaftar dan dipetakan ke `device_id` unit yang mengirim laporan. ArtecRobo dapat mengirim kondisi sebagai parameter URL tanpa JSON body atau header:
+
+```bash
+curl -X POST 'http://localhost:3000/api/devices/alat-1/components/motor-elevator-1/status?condition=normal'
+curl -X POST 'http://localhost:3000/api/devices/alat-1/components/motor-elevator-1/status?condition=perlu_dicek'
+curl 'http://localhost:3000/api/component-condition-reports?device_id=alat-1&component_id=motor-elevator-1&limit=10'
+```
+
+`condition` adalah teks non-kosong maksimal 80 karakter; gunakan nilai konsisten seperti `normal`, `perlu_dicek`, atau `rusak`. Server mencatat waktu setiap laporan. Katalog `/api/components` menyertakan `reported_condition` dan `condition_reported_at` dari laporan terbaru. Pelaporan ini tidak mengubah posisi aktuator dan tidak memperbarui heartbeat unit. Komponen yang belum dipetakan atau dilaporkan melalui unit yang bukan pemiliknya akan ditolak.
+
+Endpoint kondisi ini belum memakai token perangkat. Batasi akses backend ke LAN tepercaya dengan firewall dan jangan expose port API ke internet publik. CORS bukan pengganti autentikasi.
 
 ## Komponen dan command per unit
 
