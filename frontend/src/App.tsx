@@ -5,6 +5,11 @@ import {
   ArrowUpRight,
   Camera,
   Check,
+  Cloud,
+  CloudDrizzle,
+  CloudFog,
+  CloudLightning,
+  CloudRain,
   Clock3,
   CloudSun,
   Droplets,
@@ -20,6 +25,7 @@ import {
   Upload,
   Wifi,
   WifiOff,
+  Wind,
 } from 'lucide-react'
 import './App.css'
 
@@ -129,6 +135,10 @@ type Weather = {
   temperature_c: number
   apparent_temperature_c: number
   humidity_percent: number
+  precipitation_mm: number | null
+  wind_speed_kmh: number | null
+  weather_code: number
+  is_day: boolean
   condition: string
   observed_at: string
 }
@@ -638,6 +648,22 @@ function App() {
     seenSensors.add(key)
     return true
   }).slice(0, 12)
+  const weatherCode = weather?.weather_code ?? -1
+  const WeatherIcon = weatherCode >= 95
+    ? CloudLightning
+    : weatherCode === 45 || weatherCode === 48
+      ? CloudFog
+      : weatherCode >= 80 || (weatherCode >= 61 && weatherCode <= 65)
+        ? CloudRain
+        : weatherCode >= 51 && weatherCode <= 55
+          ? CloudDrizzle
+          : weatherCode === 3 || weatherCode === 2
+            ? Cloud
+            : weatherCode === 0 && !weather?.is_day
+              ? Moon
+              : weatherCode === 0
+                ? Sun
+                : CloudSun
 
   return (
     <main className="dashboard-shell">
@@ -691,11 +717,45 @@ function App() {
           <strong>{prediction ? 'Aktif' : 'Menunggu'}</strong>
           <div className="metric-foot">Identifikasi wajah · Keras</div>
         </article>
-        <article className="metric metric-weather">
-          <div className="metric-top"><span>CUACA PAKEM</span><CloudSun size={17} /></div>
-          <strong>{weather ? `${Math.round(weather.temperature_c)}°C` : weatherLoading ? 'Memuat' : '--'}</strong>
-          <div className="metric-foot">{weather ? weather.condition : weatherLoading ? 'Mengambil data terkini' : 'Cuaca tidak tersedia'}</div>
-        </article>
+      </section>
+
+      <section className="weather-panel" aria-labelledby="weather-title">
+        <div className="weather-hero">
+          <div className={`weather-visual ${weather?.is_day ? 'is-day' : 'is-night'}`} aria-hidden="true">
+            <WeatherIcon size={70} strokeWidth={1.4} />
+            {weather?.is_day && <span className="weather-sun-disc" />}
+          </div>
+          <div className="weather-current">
+            <p className="section-index"><span className="weather-live-dot" /> CUACA SAAT INI</p>
+            <h2 id="weather-title">{weather?.location ?? 'Cuaca Pakem'}</h2>
+            {weather ? (
+              <>
+                <div className="weather-temperature">{Math.round(weather.temperature_c)}<span>°C</span></div>
+                <p className="weather-condition">{weather.condition}<span> · </span>Terasa {Math.round(weather.apparent_temperature_c)}°C</p>
+              </>
+            ) : (
+              <p className="weather-condition">{weatherLoading ? 'Mengambil kondisi terkini...' : 'Data cuaca tidak tersedia'}</p>
+            )}
+            <span className="weather-observed">{weather ? `DIPERBARUI ${formatTimestamp(weather.observed_at)}` : 'PAKEM, SLEMAN'}</span>
+          </div>
+        </div>
+        <div className="weather-measures" aria-label="Visualisasi parameter cuaca terkini">
+          <div className="weather-measure">
+            <div className="weather-measure-heading"><span><Droplets size={15} /> KELEMBAPAN</span><strong>{weather ? `${Math.round(weather.humidity_percent)}%` : '--'}</strong></div>
+            <div className="weather-bar"><span className="humidity-bar" style={{ width: `${weather ? Math.min(100, Math.max(0, weather.humidity_percent)) : 0}%` }} /></div>
+            <small>RELATIF</small>
+          </div>
+          <div className="weather-measure">
+            <div className="weather-measure-heading"><span><CloudRain size={15} /> CURAH HUJAN</span><strong>{weather?.precipitation_mm != null ? `${weather.precipitation_mm.toFixed(1)} mm` : '--'}</strong></div>
+            <div className="weather-bar"><span className="rain-bar" style={{ width: `${weather?.precipitation_mm != null ? Math.min(100, Math.max(0, weather.precipitation_mm) * 10) : 0}%` }} /></div>
+            <small>{weather?.precipitation_mm != null && weather.precipitation_mm > 0 ? 'SEDANG TURUN' : 'SAAT INI'}</small>
+          </div>
+          <div className="weather-measure">
+            <div className="weather-measure-heading"><span><Wind size={15} /> KECEPATAN ANGIN</span><strong>{weather?.wind_speed_kmh != null ? `${Math.round(weather.wind_speed_kmh)} km/j` : '--'}</strong></div>
+            <div className="weather-bar"><span className="wind-bar" style={{ width: `${weather?.wind_speed_kmh != null ? Math.min(100, Math.max(0, weather.wind_speed_kmh / 0.6)) : 0}%` }} /></div>
+            <small>ANGIN PERMUKAAN</small>
+          </div>
+        </div>
       </section>
 
       <section className="panel devices-panel" aria-labelledby="devices-title">
