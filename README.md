@@ -42,6 +42,12 @@ Jika daftar kamera menunjukkan akses ditolak, pastikan pengguna Linux memiliki i
 | `POST` | `/api/devices` | Daftarkan alat baru dengan ID dan nama |
 | `POST` | `/api/devices/status` | Terima status `hidup`/`mati` dari alat yang sudah terdaftar |
 | `GET` | `/api/devices` | Ambil status terakhir seluruh alat |
+| `GET` | `/api/components` | Ambil katalog komponen; opsional filter `device_id` |
+| `POST` | `/api/components` | Daftarkan komponen terkonfirmasi atau placeholder belum dipetakan |
+| `PUT` | `/api/components/{component_id}` | Perbarui pemetaan dan konfigurasi komponen |
+| `POST` | `/api/devices/{device_id}/components/{component_id}/commands` | Antrekan command hanya untuk aktuator terkonfirmasi pada unit pemilik |
+| `GET` | `/api/devices/{device_id}/commands` | Ambil command milik unit; wajib header `X-Device-Token` |
+| `POST` | `/api/devices/{device_id}/commands/{id}/ack` | ACK command milik unit; wajib header `X-Device-Token` |
 | `POST` | `/api/predictions` | Kirim snapshot wajah ke model Keras di laptop; multipart field `image` |
 | `GET` | `/api/predictions` | Plain text kelas terakhir, misalnya `owner`; `unknown` jika belum dikenal/kedaluwarsa |
 | `GET` | `/api/predictions/latest` | Ambil prediksi terakhir |
@@ -91,6 +97,33 @@ curl -X POST 'http://localhost:3000/api/devices/alat-1/readings?sensor_id=light-
 curl 'http://localhost:3000/api/readings?device_id=alat-1&limit=20'
 ```
 
+## Komponen dan command per unit
+
+Katalog komponen tidak mengasumsikan pembagian fisik. Komponen perkiraan dapat didaftarkan dengan `device_id: null`, `confirmed: false`, dan `enabled: false`; tandai pemetaan terkonfirmasi hanya setelah wiring dan unit pemilik diverifikasi. Contoh placeholder motor:
+
+```bash
+curl -X POST http://localhost:3000/api/components \
+  -H 'Content-Type: application/json' \
+  -d '{"component_id":"motor-elevator-1","name":"Motor elevator","component_type":"dc_motor","device_id":null,"confirmed":false,"enabled":false,"command_values":[],"safe_value":null}'
+```
+
+Untuk aktuator yang sudah dipetakan, `device_id` harus menunjuk alat terdaftar. `confirmed` dan `enabled` harus aktif, `safe_value` wajib termasuk `command_values`, dan alat harus berstatus online agar server menerima command. Nilai seperti `forward`, `reverse`, atau `stop` hanyalah contoh; gunakan nilai yang benar-benar didukung program unit.
+
+Command disimpan dengan pemilik unit dan komponen. Poller tidak dapat melihat command unit lain, endpoint global lama tidak menampilkan command terarah, dan ACK dari unit yang salah ditolak. Unit perlu mengirim header token:
+
+```bash
+export AGRO_DEVICE_TOKENS='{"alat-1":"TOKEN_ALAT_1","alat-2":"TOKEN_ALAT_2"}'
+curl -H 'X-Device-Token: TOKEN_ALAT_1' http://localhost:3000/api/devices/alat-1/commands
+curl -X POST http://localhost:3000/api/devices/alat-1/commands/12/ack \
+  -H 'X-Device-Token: TOKEN_ALAT_1' \
+  -H 'Content-Type: application/json' \
+  -d '{"actual_position":"stop","success":true}'
+```
+
+Token harus disetel secara lokal di backend dan unit/gateway; jangan menaruh nilai asli di repo atau membagikannya. Tanpa token untuk unit, polling/ACK per-unit dinonaktifkan. Program blok ArtecRobo yang ada di workspace belum tersedia untuk membuktikan dukungan header HTTP; gateway dapat menjadi jembatan. API saja tidak menjalankan motor: firmware/gateway tetap harus mem-poll command, menerapkannya, dan mengirim ACK.
+
+Dashboard menyediakan visualisasi 3D skematis enam Core Unit dan daftar inventaris agregat perkiraan. Tata letak/koneksi fisik belum diketahui; visual tidak menggambarkan posisi motor atau sensor. Model mesin yang akurat memerlukan foto/CAD dan pemetaan komponen. Tema terang/gelap dapat dipilih dari tombol di header dan disimpan pada browser.
+
 ## Identifikasi wajah dan ArtecRobo 2.0
 
 Model Keras mengklasifikasikan foto yang diterima; label kelas menentukan identitas. Label yang diizinkan secara default adalah `owner`, `trusted`, dan `terpercaya` (pencocokan tidak membedakan huruf besar/kecil). Kelas lain menghasilkan `untrusted`. Confidence di bawah ambang menghasilkan `unknown`, yang selalu dianggap tidak tepercaya.
@@ -105,7 +138,7 @@ export AGRO_MIN_CONFIDENCE="0.85"
 export AGRO_ACCESS_MAX_AGE_SECONDS="15"
 ```
 
-Tidak ada autentikasi token pada endpoint perangkat. Jalankan hanya pada LAN tepercaya, gunakan firewall, dan jangan expose port API ke internet publik.
+Endpoint legacy umum dan kontrol dashboard yang lama belum memakai autentikasi. Endpoint poll/ACK per-unit yang baru memerlukan `AGRO_DEVICE_TOKENS`, tetapi jalankan seluruh API hanya pada LAN tepercaya, gunakan firewall, dan jangan expose port ke internet publik.
 
 Contoh POST foto dari perangkat:
 

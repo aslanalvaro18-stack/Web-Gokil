@@ -1,6 +1,6 @@
 import { Canvas } from '@react-three/fiber'
 import { Html, OrbitControls } from '@react-three/drei'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 type Unit = {
   device_id: string
@@ -11,6 +11,7 @@ type Unit = {
 
 type MachineOverviewProps = {
   devices: Unit[]
+  theme: 'light' | 'dark'
 }
 
 const UNIT_IDS = Array.from({ length: 6 }, (_, index) => `alat-${index + 1}`)
@@ -75,17 +76,15 @@ function Scene({ devices }: MachineOverviewProps) {
   )
 }
 
-export default function MachineOverview({ devices }: MachineOverviewProps) {
-  const [webglAvailable, setWebglAvailable] = useState(true)
-
-  useEffect(() => {
+export default function MachineOverview({ devices, theme }: MachineOverviewProps) {
+  const [webglAvailable] = useState(() => {
     try {
       const canvas = document.createElement('canvas')
-      setWebglAvailable(Boolean(canvas.getContext('webgl2') || canvas.getContext('webgl')))
+      return Boolean(canvas.getContext('webgl2') || canvas.getContext('webgl'))
     } catch {
-      setWebglAvailable(false)
+      return false
     }
-  }, [])
+  })
 
   return (
     <section className="machine-overview" aria-labelledby="machine-overview-title">
@@ -101,8 +100,8 @@ export default function MachineOverview({ devices }: MachineOverviewProps) {
         <div className="machine-scene" role="img" aria-label="Visual skematis enam Core Unit ArtecRobo 2.0">
           {webglAvailable ? (
             <Canvas camera={{ position: [8, 7, 9], fov: 36 }} dpr={[1, 1.5]} shadows>
-              <color attach="background" args={['#e9eee7']} />
-              <Scene devices={devices} />
+              <color attach="background" args={[theme === 'dark' ? '#121a16' : '#e9eee7']} />
+              <Scene devices={devices} theme={theme} />
             </Canvas>
           ) : (
             <div className="machine-fallback">

@@ -609,6 +609,63 @@ def set_emergency_mode(database_path: Path, enabled: bool, source: str = 'dashbo
                     'UPDATE actuator_state SET target_position = ?, updated_at = ? WHERE name = ?',
                     (actuator['safe_position'], now, actuator['name']),
                 )
+            components = connection.execute(
+                '''
+                SELECT * FROM device_components
+                WHERE device_id IS NOT NULL AND confirmed = 1 AND enabled = 1
+                    AND component_type IN ('dc_motor', 'servo', 'actuator')
+                '''
+            ).fetchall()
+            for component in components:
+                command_values = json.loads(component['command_values'])
+                safe_value = component['safe_value']
+                if safe_value not in command_values:
+                    continue
+                connection.execute(
+                    '''
+                    UPDATE actuator_commands
+                    SET status = 'superseded', completed_at = ?, detail = 'Superseded by emergency'
+                    WHERE component_id = ? AND status = 'pending'
+                    ''',
+                    (now, component['component_id']),
+                )
+                cursor = connection.execute(
+                    '''
+                    INSERT INTO actuator_commands
+                        (actuator, position, source, requested_at, detail, device_id, component_id)
+                    VALUES (?, ?, 'emergency', ?, 'Move to configured safe value', ?, ?)
+                    ''',
+                    (
+                        component['component_id'],
+                        safe_value,
+                        now,
+                        component['device_id'],
+                        component['component_id'],
+                    ),
+                )
+                connection.execute(
+                    '''
+                    UPDATE device_components SET target_value = ?, updated_at = ?
+                    WHERE component_id = ?
+                    ''',
+                    (safe_value, now, component['component_id']),
+                )
+                connection.execute(
+                    '''
+                    INSERT INTO operation_events
+                        (event_type, source, actuator, value, detail, occurred_at)
+                    VALUES ('actuator_commanded', 'emergency', ?, ?, ?, ?)
+                    ''',
+                    (
+                        component['component_id'],
+                        safe_value,
+                        json.dumps({
+                            'command_id': cursor.lastrowid,
+                            'device_id': component['device_id'],
+                        }),
+                        now,
+                    ),
+                )
     return get_control_snapshot(database_path)
 
 
@@ -690,6 +747,7 @@ def acknowledge_actuator_command(
         if (
             not command
             or command['status'] != 'pending'
+            or (device_id is None and command['device_id'] is not None)
             or (device_id is not None and command['device_id'] != device_id)
         ):
             return None
@@ -737,7 +795,7 @@ def list_pending_commands(database_path: Path, limit: int) -> list[dict]:
     expire_pending_commands(database_path, COMMAND_TIMEOUT_SECONDS)
     with _connect(database_path) as connection:
         rows = connection.execute(
-            "SELECT * FROM actuator_commands WHERE status = 'pending' ORDER BY id LIMIT ?",
+            "SELECT * FROM actuator_commands WHERE status = 'pending' AND device_id IS NULL ORDER BY id LIMIT ?",
             (limit,),
         ).fetchall()
     return [dict(row) for row in rows]

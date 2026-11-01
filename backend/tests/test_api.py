@@ -202,6 +202,7 @@ def test_device_commands_are_authenticated_and_scoped_to_component_owner(
             '/api/devices/alat-1/commands',
             headers={'X-Device-Token': 'device-token-1'},
         )
+        legacy_commands = client.get('/api/device/commands')
         other_commands = client.get(
             '/api/devices/alat-2/commands',
             headers={'X-Device-Token': 'device-token-2'},
@@ -209,6 +210,10 @@ def test_device_commands_are_authenticated_and_scoped_to_component_owner(
         wrong_owner_ack = client.post(
             f"/api/devices/alat-2/commands/{command.json()['id']}/ack",
             headers={'X-Device-Token': 'device-token-2'},
+            json={'actual_position': 'forward'},
+        )
+        legacy_ack = client.post(
+            f"/api/device/commands/{command.json()['id']}/ack",
             json={'actual_position': 'forward'},
         )
         acknowledged = client.post(
@@ -223,7 +228,9 @@ def test_device_commands_are_authenticated_and_scoped_to_component_owner(
     assert missing_token.status_code == 401
     assert [item['id'] for item in owner_commands.json()] == [command.json()['id']]
     assert other_commands.json() == []
+    assert legacy_commands.json() == []
     assert wrong_owner_ack.status_code == 404
+    assert legacy_ack.status_code == 404
     assert acknowledged.status_code == 200
     assert components[0]['current_value'] == 'forward'
 
@@ -252,6 +259,51 @@ def test_unconfirmed_component_cannot_be_controlled(tmp_path: Path) -> None:
 
     assert component.status_code == 201
     assert command.status_code == 409
+
+
+def test_emergency_replaces_pending_component_command_with_safe_value(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv('AGRO_DEVICE_TOKENS', '{"alat-1":"device-token-1"}')
+    app = create_app(tmp_path / 'test.db', FakeClassifier())
+    with TestClient(app) as client:
+        client.post(
+            '/api/devices/status',
+            json={'device_id': 'alat-1', 'status': 'hidup'},
+        )
+        client.post(
+            '/api/components',
+            json={
+                'component_id': 'elevator-motor-1',
+                'name': 'Motor elevator 1',
+                'component_type': 'dc_motor',
+                'device_id': 'alat-1',
+                'confirmed': True,
+                'enabled': True,
+                'command_values': ['forward', 'stop'],
+                'safe_value': 'stop',
+            },
+        )
+        client.post(
+            '/api/devices/alat-1/components/elevator-motor-1/commands',
+            json={'position': 'forward'},
+        )
+        emergency = client.post('/api/emergency', json={'enabled': True})
+        commands = client.get(
+            '/api/devices/alat-1/commands',
+            headers={'X-Device-Token': 'device-token-1'},
+        ).json()
+        blocked = client.post(
+            '/api/devices/alat-1/components/elevator-motor-1/commands',
+            json={'position': 'forward'},
+        )
+
+    assert emergency.status_code == 200
+    assert len(commands) == 1
+    assert commands[0]['position'] == 'stop'
+    assert commands[0]['source'] == 'emergency'
+    assert blocked.status_code == 409
 
 
 def test_health_returns_plain_text_ok(tmp_path: Path) -> None:

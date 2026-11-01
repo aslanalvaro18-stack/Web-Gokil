@@ -10,6 +10,7 @@
   --acid: #c8df66;
   --acid-dark: #758b2c;
   --tomato: #cf684d;
+  color-scheme: light;
   --display: 'Manrope', 'Trebuchet MS', sans-serif;
   --mono: 'DM Mono', 'SFMono-Regular', Consolas, monospace;
 
@@ -22,9 +23,22 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root[data-theme='dark'] {
+  --ink: #e6eee7;
+  --muted: #a0ada3;
+  --line: #35443a;
+  --paper: #1b2620;
+  --canvas: #111915;
+  --green: #91c6a2;
+  --acid: #c9e76a;
+  --acid-dark: #d3ec7a;
+  --tomato: #e48870;
+  color-scheme: dark;
+}
+
 * { box-sizing: border-box; }
 
-body { min-width: 320px; min-height: 100vh; margin: 0; }
+body { min-width: 320px; min-height: 100vh; margin: 0; background: var(--canvas); transition: background-color 180ms ease, color 180ms ease; }
 button, input { font: inherit; }
 button:focus-visible, input:focus-visible, label:focus-within { outline: 2px solid var(--acid-dark); outline-offset: 3px; }
 #root { min-height: 100vh; }

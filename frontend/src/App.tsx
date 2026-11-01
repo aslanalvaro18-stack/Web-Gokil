@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useEffectEvent, useRef, useState } from 'react'
 import {
   Activity,
   AlertCircle,
@@ -10,6 +10,7 @@ import {
   Droplets,
   Leaf,
   Moon,
+  Pencil,
   Plus,
   Radio,
   RefreshCw,
@@ -20,8 +21,9 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react'
-import MachineOverview from './components/MachineOverview'
 import './App.css'
+
+const MachineOverview = lazy(() => import('./components/MachineOverview'))
 
 type Telemetry = {
   uptime_seconds: number
@@ -238,6 +240,7 @@ function App() {
   const [componentSafeInput, setComponentSafeInput] = useState('')
   const [componentConfirmedInput, setComponentConfirmedInput] = useState(false)
   const [componentNotice, setComponentNotice] = useState('')
+  const [editingComponentId, setEditingComponentId] = useState<string | null>(null)
   const [theme, setTheme] = useState<Theme>(() => {
     const storedTheme = window.localStorage.getItem('agro-sembada-theme')
     if (storedTheme === 'light' || storedTheme === 'dark') return storedTheme
@@ -494,9 +497,13 @@ function App() {
     setComponentNotice('')
     const commandValues = componentValuesInput.split(',').map((value) => value.trim()).filter(Boolean)
     const isActuator = ['dc_motor', 'servo', 'actuator'].includes(componentTypeInput)
+    const isEditing = editingComponentId !== null
     try {
-      const response = await fetch('/api/components', {
-        method: 'POST',
+      const componentUrl = isEditing
+        ? `/api/components/${encodeURIComponent(editingComponentId)}`
+        : '/api/components'
+      const response = await fetch(componentUrl, {
+        method: isEditing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           component_id: componentIdInput.trim(),
@@ -511,7 +518,12 @@ function App() {
       })
       const body = (await response.json()) as DeviceComponent & { detail?: string }
       if (!response.ok) throw new Error(body.detail ?? 'Komponen gagal ditambahkan.')
-      setComponents((current) => [...current, body].sort((first, second) => first.component_id.localeCompare(second.component_id)))
+      setComponents((current) => {
+        const next = isEditing
+          ? current.map((component) => component.component_id === body.component_id ? body : component)
+          : [...current, body]
+        return next.sort((first, second) => first.component_id.localeCompare(second.component_id))
+      })
       setComponentIdInput('')
       setComponentNameInput('')
       setComponentTypeInput('other')
@@ -519,12 +531,38 @@ function App() {
       setComponentValuesInput('')
       setComponentSafeInput('')
       setComponentConfirmedInput(false)
-      setComponentNotice(`${body.name} berhasil ditambahkan.`)
+      setEditingComponentId(null)
+      setComponentNotice(`${body.name} berhasil ${isEditing ? 'diperbarui' : 'ditambahkan'}.`)
     } catch (error) {
       setComponentNotice(error instanceof Error ? error.message : 'Tidak dapat menambahkan komponen.')
     } finally {
       setDeviceBusy(false)
     }
+  }
+
+  const editComponent = (component: DeviceComponent) => {
+    setEditingComponentId(component.component_id)
+    setComponentIdInput(component.component_id)
+    setComponentNameInput(component.name)
+    setComponentTypeInput(component.component_type)
+    setComponentDeviceInput(component.device_id ?? '')
+    setComponentValuesInput(component.command_values.join(', '))
+    setComponentSafeInput(component.safe_value ?? '')
+    setComponentConfirmedInput(component.confirmed)
+    setComponentNotice('')
+    document.getElementById('component-id')?.focus()
+  }
+
+  const cancelComponentEdit = () => {
+    setEditingComponentId(null)
+    setComponentIdInput('')
+    setComponentNameInput('')
+    setComponentTypeInput('other')
+    setComponentDeviceInput('')
+    setComponentValuesInput('')
+    setComponentSafeInput('')
+    setComponentConfirmedInput(false)
+    setComponentNotice('')
   }
 
   const postControl = async (path: string, payload: Record<string, unknown>) => {
@@ -712,7 +750,9 @@ function App() {
         </div>
       </section>
 
-      <MachineOverview devices={devices} />
+      <Suspense fallback={<section className="machine-scene-loading" aria-live="polite">Memuat visualisasi unit...</section>}>
+        <MachineOverview devices={devices} theme={theme} />
+      </Suspense>
 
       <section className="panel sensor-panel" aria-labelledby="sensor-readings-title">
         <div className="panel-heading compact-heading">
@@ -763,6 +803,9 @@ function App() {
                 <span className={`component-mapping ${component.confirmed ? 'is-confirmed' : ''}`}>
                   {component.device_id ?? 'Belum dipetakan'} · {component.confirmed ? 'TERKONFIRMASI' : 'PERLU VERIFIKASI'}
                 </span>
+                <button className="component-edit" type="button" onClick={() => editComponent(component)} title={`Edit ${component.name}`} aria-label={`Edit ${component.name}`}>
+                  <Pencil size={13} />
+                </button>
                 {component.command_values.length > 0 && (
                   <div className="component-command-row">
                     <span>Posisi {component.current_value ?? 'belum diketahui'} → target {component.target_value ?? '--'}</span>
@@ -785,11 +828,11 @@ function App() {
         </div>
         <form className="component-form" onSubmit={(event) => void registerComponent(event)}>
           <div className="component-form-heading">
-            <strong>Daftarkan komponen</strong>
+            <strong>{editingComponentId ? 'Perbarui komponen' : 'Daftarkan komponen'}</strong>
             <span>Mapping awal boleh dibiarkan belum terkonfirmasi.</span>
           </div>
           <div className="component-form-grid">
-            <label>ID komponen<input value={componentIdInput} onChange={(event) => setComponentIdInput(event.target.value)} pattern="[A-Za-z0-9][A-Za-z0-9_-]*" maxLength={80} required placeholder="motor-elevator-1" /></label>
+            <label>ID komponen<input id="component-id" value={componentIdInput} onChange={(event) => setComponentIdInput(event.target.value)} pattern="[A-Za-z0-9][A-Za-z0-9_-]*" maxLength={80} required placeholder="motor-elevator-1" disabled={editingComponentId !== null} /></label>
             <label>Nama<input value={componentNameInput} onChange={(event) => setComponentNameInput(event.target.value)} maxLength={100} required placeholder="Motor elevator" /></label>
             <label>Jenis<select value={componentTypeInput} onChange={(event) => setComponentTypeInput(event.target.value)}><option value="dc_motor">Motor DC</option><option value="servo">Servo</option><option value="light_sensor">Sensor cahaya</option><option value="sound_sensor">Sensor suara</option><option value="ir_photoreflector">IR photoreflector</option><option value="other">Lainnya</option></select></label>
             <label>Core Unit<select value={componentDeviceInput} onChange={(event) => setComponentDeviceInput(event.target.value)}><option value="">Belum dipetakan</option>{devices.map((device) => <option value={device.device_id} key={device.device_id}>{device.name}</option>)}</select></label>
@@ -799,7 +842,10 @@ function App() {
             </>}
           </div>
           <label className="component-confirm-label"><input type="checkbox" checked={componentConfirmedInput} onChange={(event) => setComponentConfirmedInput(event.target.checked)} /> Saya sudah memverifikasi pemetaan fisik dan posisi aman</label>
-          <button className="button button-primary" type="submit" disabled={deviceBusy || !apiOnline}><Plus size={15} /> Simpan komponen</button>
+          <div className="component-form-actions">
+            <button className="button button-primary" type="submit" disabled={deviceBusy || !apiOnline}><Plus size={15} /> {editingComponentId ? 'Perbarui komponen' : 'Simpan komponen'}</button>
+            {editingComponentId && <button className="button button-secondary" type="button" onClick={cancelComponentEdit}>Batal</button>}
+          </div>
           {componentNotice && <p className="device-notice" role="status">{componentNotice}</p>}
         </form>
       </section>
