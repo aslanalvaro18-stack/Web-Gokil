@@ -127,6 +127,67 @@ function Gear({ position, radius = 0.32 }: { position: [number, number, number];
   )
 }
 
+function ServoMotor({
+  position,
+  rotationY = 0,
+}: {
+  position: [number, number, number]
+  rotationY?: number
+}) {
+  return (
+    <group position={position} rotation={[0, rotationY, 0]} scale={1.22}>
+      <Beam position={[0, 0, 0]} size={[0.64, 0.46, 0.56]} color="#28383c" />
+      <Beam position={[0, 0, 0.29]} size={[0.46, 0.32, 0.035]} color="#f4f0e2" />
+      <Beam position={[0, 0.02, 0.314]} size={[0.17, 0.17, 0.025]} color="#17538b" />
+      <mesh position={[0, 0.23, 0]} castShadow>
+        <cylinderGeometry args={[0.19, 0.19, 0.12, 12]} />
+        <meshStandardMaterial color="#ed3945" roughness={0.5} />
+      </mesh>
+      <mesh position={[0, 0.3, 0]} castShadow>
+        <cylinderGeometry args={[0.08, 0.08, 0.14, 10]} />
+        <meshStandardMaterial color="#f4f0e2" metalness={0.28} roughness={0.42} />
+      </mesh>
+      <Beam position={[0, 0.36, 0]} size={[0.52, 0.08, 0.11]} color="#ed3945" />
+      <Beam position={[-0.43, 0, 0]} size={[0.18, 0.54, 0.62]} color="#7bd6d0" />
+      <Beam position={[0.43, 0, 0]} size={[0.18, 0.54, 0.62]} color="#7bd6d0" />
+    </group>
+  )
+}
+
+function DCMotor({
+  position,
+  rotationY = 0,
+}: {
+  position: [number, number, number]
+  rotationY?: number
+}) {
+  return (
+    <group position={position} rotation={[0, rotationY, 0]} scale={1.12}>
+      <Beam position={[-0.38, 0, 0]} size={[0.56, 0.5, 0.58]} color="#f4f0e2" />
+      <Beam position={[-0.38, 0, 0.31]} size={[0.36, 0.34, 0.045]} color="#f66c32" />
+      <mesh position={[0.03, 0, 0]} rotation={[0, 0, Math.PI / 2]} castShadow receiveShadow>
+        <cylinderGeometry args={[0.29, 0.29, 0.86, 16]} />
+        <meshStandardMaterial color="#58666a" metalness={0.22} roughness={0.5} />
+      </mesh>
+      {[-0.19, -0.07, 0.05, 0.17].map((x) => (
+        <mesh key={x} position={[x, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
+          <torusGeometry args={[0.285, 0.04, 6, 12]} />
+          <meshStandardMaterial color="#849092" metalness={0.26} roughness={0.45} />
+        </mesh>
+      ))}
+      <mesh position={[0.44, 0, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
+        <cylinderGeometry args={[0.1, 0.1, 0.3, 12]} />
+        <meshStandardMaterial color="#c6d0cb" metalness={0.42} roughness={0.32} />
+      </mesh>
+      <mesh position={[0.61, 0, 0]} rotation={[0, 0, Math.PI / 2]} castShadow>
+        <cylinderGeometry args={[0.22, 0.22, 0.14, 12]} />
+        <meshStandardMaterial color="#ed3945" roughness={0.52} />
+      </mesh>
+      <Beam position={[-0.4, -0.34, 0]} size={[0.72, 0.12, 0.68]} color="#17538b" />
+    </group>
+  )
+}
+
 function SideLift() {
   const liftX = 2.14
   const liftZ = 0.58
@@ -147,11 +208,13 @@ function SideLift() {
       <Beam position={[1.8, 2.55, 0]} size={[1.05, 0.14, 0.16]} color="#f66c32" />
       <StuddedBeam position={[liftX, 1.62, 0]} size={[0.92, 0.15, 1.32]} color="#7bd6d0" />
       <Beam position={[1.88, 1.79, 0]} size={[0.82, 0.09, 0.9]} color="#f4f0e2" />
-      <Gear position={[liftX + 0.2, 0.75, 0.76]} radius={0.29} />
+      <Gear position={[liftX + 0.41, 0.75, 0.92]} radius={0.29} />
       <Gear position={[liftX + 0.2, 3.0, 0.76]} radius={0.29} />
+      <DCMotor position={[liftX - 0.2, 0.75, 0.92]} />
       <Beam position={[liftX + 0.28, 3.08, 0]} size={[0.74, 0.46, 0.85]} color="#f4f0e2" />
       <Beam position={[liftX + 0.68, 3.1, 0]} size={[0.12, 0.58, 0.72]} color="#f66c32" />
       <Beam position={[liftX + 0.33, 2.88, 0.45]} size={[0.52, 0.09, 0.08]} color="#17538b" />
+      <ServoMotor position={[liftX + 0.36, 2.5, 0.83]} rotationY={Math.PI / 2} />
     </group>
   )
 }
@@ -193,6 +256,10 @@ function MainMachine({ devices }: { devices: Unit[] }) {
           <meshStandardMaterial color={index % 2 ? '#68747a' : '#9ba6a2'} metalness={0.18} roughness={0.48} />
         </mesh>
       ))}
+
+      <DCMotor position={[0.72, 1.26, 1.03]} />
+      <ServoMotor position={[-0.68, 2.08, 1.03]} />
+      <ServoMotor position={[0.43, 2.08, 1.03]} />
 
       <Beam position={[-0.55, 2.58, 0]} size={[0.12, 0.9, 0.12]} color="#f66c32" />
       <Beam position={[0.55, 2.58, 0]} size={[0.12, 0.9, 0.12]} color="#7bd6d0" />
