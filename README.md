@@ -40,7 +40,9 @@ Jika daftar kamera menunjukkan akses ditolak, pastikan pengguna Linux memiliki i
 | `POST` | `/api/devices/{id}/readings` | Simpan pembacaan sensor terstruktur dari kit terdaftar |
 | `GET` | `/api/readings?limit=100` | Ambil riwayat pembacaan sensor, opsional filter `device_id` |
 | `POST` | `/api/devices` | Daftarkan alat baru dengan ID dan nama |
-| `POST` | `/api/devices/status` | Terima status `hidup`/`mati` dari alat yang sudah terdaftar |
+| `POST` | `/api/devices/{device_id}/status` | Terima heartbeat status `hidup`/`mati` untuk satu Core Unit |
+| `GET` | `/api/devices/{device_id}/status` | Ambil status terkini satu Core Unit |
+| `POST` | `/api/devices/status` | Endpoint kompatibilitas untuk status dengan `device_id` di JSON/query |
 | `GET` | `/api/devices` | Ambil status terakhir seluruh alat |
 | `GET` | `/api/components` | Ambil katalog komponen; opsional filter `device_id` |
 | `POST` | `/api/components` | Daftarkan komponen terkonfirmasi atau placeholder belum dipetakan |
@@ -69,15 +71,100 @@ Jika daftar kamera menunjukkan akses ditolak, pastikan pengguna Linux memiliki i
 | `GET` | `/api/device/commands` | ArtecRobo mengambil command tertunda |
 | `POST` | `/api/device/commands/{id}/ack?actual_position=closed` | ACK hasil command tanpa JSON body |
 
+## API ArtecRobo: teks sederhana
+
+Gunakan endpoint `/api/artec/` bila blok ArtecRobo lebih mudah mengolah teks daripada JSON. Base URL: `https://dev.pradnyasiwi.web.id`. URL GET mengembalikan satu nilai teks atau baris sederhana. POST biasa hanya memakai parameter URL, tanpa body JSON; respons sukses berupa `tersimpan`, status, atau ID command.
+
+| Method | URL | Output / parameter |
+| --- | --- | --- |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/health` | `ok` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices/all-online` | `true` jika semua alat terdaftar hidup dan heartbeat-nya baru; selain itu `false` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1/status` | `hidup`, `mati`, `belum_terhubung`, atau `tidak_dikenal` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1/online` | `true` atau `false` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1/age` | Umur heartbeat dalam detik |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1/name` | Nama alat |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices` | Baris `device_id|status|connection_status` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/components?device_id=core-1` | Baris `component_id|name|device_id` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/components/motor-1/current_value` | Nilai komponen saat ini |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/components/motor-1/target_value` | Target komponen |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/components/motor-1/reported_condition` | Kondisi terakhir |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/telemetry/uptime` | Uptime detik terakhir |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/telemetry/status` | Status telemetri terakhir |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/telemetry/history?limit=10` | Baris `uptime|status|waktu` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/readings/core-1/light-1/value` | Nilai sensor terakhir |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/readings/core-1/light-1/unit` | Satuan sensor |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/readings/core-1` | Baris `sensor_id|jenis|nilai|satuan|waktu` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1/components/motor-1/condition` | Kondisi komponen terakhir |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1/components/motor-1/reports?limit=10` | Baris `kondisi|waktu` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/predictions/class` | Kelas terakhir, misalnya `owner` atau `unknown` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/predictions/confidence` | Confidence prediksi terakhir |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/access/status` | `trusted`, `untrusted`, atau `unknown` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/access/is_trusted` | `true` atau `false` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/dashboard/uptime_seconds` | Uptime terakhir |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/weather/temperature_c` | Suhu Pakem |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/weather/condition` | Kondisi cuaca |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/control/mode` | `manual` atau `auto` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/control/emergency_mode` | `true` atau `false` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/control/actuators/roof/target_position` | Target aktuator |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/events?limit=10` | Baris `jenis|sumber|nilai|waktu` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/emergency` | `on` atau `off` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/commands` | Baris `id|aktuator|posisi` atau `kosong` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/camera/status` | State kamera |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/camera/stream` | Stream kamera, bukan teks |
+
+Ganti ID contoh seperti `core-1`, `light-1`, `motor-1`, dan `roof` dengan ID yang terdaftar. Untuk cek semua alat, `all-online` bernilai `true` hanya jika semua alat terdaftar hidup dan heartbeat belum melewati timeout 10 detik. Field yang belum ada mengembalikan `tidak_ada` atau `tidak_ada_data`.
+
+Semua POST di bawah menerima parameter melalui URL dan tidak memerlukan body JSON. Sukses membalas teks `tersimpan`, status, atau ID command:
+
+| Method | URL siap salin | Keterangan |
+| --- | --- | --- |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/camera/rescan` | Pindai ulang kamera; balasan state |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/camera/stop` | Hentikan kamera |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/devices?device_id=pompa-air&name=Pompa%20Air` | Daftarkan alat |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1/status?status=hidup` | Heartbeat core |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/telemetry?uptime_seconds=7250&status=running` | Simpan uptime/status |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1/readings?sensor_id=light-1&sensor_type=light&value=360&unit=lux` | Simpan bacaan sensor |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/components?component_id=motor-1&name=Motor&component_type=dc_motor&device_id=core-1` | Daftarkan komponen |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/components/motor-1?name=Motor&component_type=dc_motor&device_id=core-1` | Perbarui komponen |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1/components/motor-1/condition?condition=normal` | Catat kondisi komponen |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/control/mode?mode=manual` | Ubah mode ke `manual`/`auto` |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/control/actuators/roof?position=closed` | Antrekan posisi aktuator; balasan ID command |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1/components/motor-1/commands?position=stop` | Antrekan command komponen; balasan ID |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/drying/start?target_seconds=3600` | Mulai jemur |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/drying/stop` | Hentikan jemur |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/events?event_type=catatan&value=mulai` | Catat event |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/emergency?mode=on` | Aktifkan/nonaktifkan emergency |
+
+Command per-device dan ACK tetap memerlukan header `X-Device-Token`, karena token tidak aman diletakkan di URL. Unggah prediksi foto tetap memerlukan multipart file `image`; API prediksi membalas access status berupa teks. Stream kamera dan unggah foto adalah pengecualian media, bukan body teks biasa. Endpoint API JSON lama tetap tersedia untuk dashboard.
+
 Contoh alat mengirim status:
 
 ```bash
 curl -X POST http://localhost:3000/api/devices -H 'Content-Type: application/json' -d '{"device_id":"pompa-air","name":"Pompa Air"}'
-curl -X POST http://localhost:3000/api/devices/status -H 'Content-Type: application/json' -d '{"device_id":"alat-1","status":"hidup"}'
-curl -X POST 'http://localhost:3000/api/devices/status?device_id=alat-1&status=hidup'
+curl -X POST 'http://localhost:3000/api/devices/core-1/status?status=hidup'
+curl -X POST http://localhost:3000/api/devices/status -H 'Content-Type: application/json' -d '{"device_id":"core-1","status":"hidup"}'
+curl -X POST 'http://localhost:3000/api/devices/status?device_id=core-1&status=hidup'
 ```
 
-Enam ID awal adalah `alat-1` sampai `alat-6`; alat tambahan dapat didaftarkan dari dashboard atau endpoint di atas. Gunakan ID yang sama saat mengirim status. `status` menerima `hidup` atau `mati`. Perangkat bisa memakai contoh URL terakhir tanpa header atau body. Status awal adalah `belum_terhubung`; `last_seen` mencatat waktu POST terakhir. Respons juga menyertakan `connection_status` (`never_seen`, `online`, `stale`) dan `age_seconds`. Batas stale default 30 detik dan dapat diubah dengan `AGRO_DEVICE_STALE_SECONDS`.
+Ambil status satu Core Unit dengan `GET` tanpa body atau header:
+
+```bash
+curl http://localhost:3000/api/devices/core-1/status
+```
+
+`GET /api/devices` tetap tersedia untuk mengambil status semua unit sekaligus. Browser yang melakukan fetch lintas-origin harus memakai origin yang ada di `AGRO_CORS_ORIGINS` (default mencakup `http://localhost:5173`, `http://127.0.0.1:5173`, dan `https://app.artec-kk.co.jp`). Origin tersebut dapat memakai semua metode dan header API; origin lain tetap ditolak oleh CORS.
+
+Enam Core Unit awal memakai ID `core-1` sampai `core-6`; alat tambahan dapat didaftarkan terlebih dahulu. Untuk endpoint per-core, `device_id` ada di URL dan `status` dapat dikirim sebagai query (`hidup` atau `mati`), tanpa body maupun header. Kirim POST berkala, misalnya setiap 5 detik. Setiap POST memperbarui `last_seen`; bila status terakhir `hidup` dan tidak ada POST selama 10 detik, API mengembalikan status `mati` dan `connection_status: "stale"`. Batas ini dapat diubah dengan `AGRO_DEVICE_STALE_SECONDS` (default `10`). Status awal tetap `belum_terhubung` sampai core pertama kali melapor. Respons menyertakan `connection_status` (`never_seen`, `online`, `stale`) dan `age_seconds`.
+
+Body JSON juga didukung jika lebih praktis:
+
+```json
+{
+  "status": "hidup"
+}
+```
+
+`status` adalah kondisi Core Unit, bukan kondisi komponen individual. Untuk melaporkan kondisi komponen gunakan endpoint `/api/devices/{device_id}/components/{component_id}/status` di bawah. Endpoint lama `/api/devices/status` tetap tersedia untuk perangkat yang mengirim `device_id` di JSON atau query URL.
 
 Contoh POST telemetri:
 
@@ -92,11 +179,11 @@ Perangkat dapat mengirim JSON yang sama. `uptime_seconds` harus bilangan bulat n
 Pembacaan sensor disimpan terpisah dari uptime/status. Setiap bacaan mencantumkan `sensor_id`, `sensor_type`, `value`, dan `unit` opsional. Pelaporan sensor juga memperbarui heartbeat kit. `POST` menerima JSON atau parameter URL agar dapat dipakai perangkat yang hanya mengirim parameter:
 
 ```bash
-curl -X POST http://localhost:3000/api/devices/alat-1/readings \
+curl -X POST http://localhost:3000/api/devices/core-1/readings \
   -H 'Content-Type: application/json' \
   -d '{"sensor_id":"light-1","sensor_type":"light","value":360,"unit":"lux"}'
-curl -X POST 'http://localhost:3000/api/devices/alat-1/readings?sensor_id=light-1&sensor_type=light&value=360&unit=lux'
-curl 'http://localhost:3000/api/readings?device_id=alat-1&limit=20'
+curl -X POST 'http://localhost:3000/api/devices/core-1/readings?sensor_id=light-1&sensor_type=light&value=360&unit=lux'
+curl 'http://localhost:3000/api/readings?device_id=core-1&limit=20'
 ```
 
 ## Kondisi komponen IoT
@@ -104,9 +191,9 @@ curl 'http://localhost:3000/api/readings?device_id=alat-1&limit=20'
 Setiap komponen harus sudah terdaftar dan dipetakan ke `device_id` unit yang mengirim laporan. ArtecRobo dapat mengirim kondisi sebagai parameter URL tanpa JSON body atau header:
 
 ```bash
-curl -X POST 'http://localhost:3000/api/devices/alat-1/components/motor-elevator-1/status?condition=normal'
-curl -X POST 'http://localhost:3000/api/devices/alat-1/components/motor-elevator-1/status?condition=perlu_dicek'
-curl 'http://localhost:3000/api/component-condition-reports?device_id=alat-1&component_id=motor-elevator-1&limit=10'
+curl -X POST 'http://localhost:3000/api/devices/core-1/components/motor-elevator-1/status?condition=normal'
+curl -X POST 'http://localhost:3000/api/devices/core-1/components/motor-elevator-1/status?condition=perlu_dicek'
+curl 'http://localhost:3000/api/component-condition-reports?device_id=core-1&component_id=motor-elevator-1&limit=10'
 ```
 
 `condition` adalah teks non-kosong maksimal 80 karakter; gunakan nilai konsisten seperti `normal`, `perlu_dicek`, atau `rusak`. Server mencatat waktu setiap laporan. Katalog `/api/components` menyertakan `reported_condition` dan `condition_reported_at` dari laporan terbaru. Pelaporan ini tidak mengubah posisi aktuator dan tidak memperbarui heartbeat unit. Komponen yang belum dipetakan atau dilaporkan melalui unit yang bukan pemiliknya akan ditolak.
@@ -130,9 +217,9 @@ Untuk aktuator yang sudah dipetakan, `device_id` harus menunjuk alat terdaftar. 
 Command disimpan dengan pemilik unit dan komponen. Poller tidak dapat melihat command unit lain, endpoint global lama tidak menampilkan command terarah, dan ACK dari unit yang salah ditolak. Unit perlu mengirim header token:
 
 ```bash
-export AGRO_DEVICE_TOKENS='{"alat-1":"TOKEN_ALAT_1","alat-2":"TOKEN_ALAT_2"}'
-curl -H 'X-Device-Token: TOKEN_ALAT_1' http://localhost:3000/api/devices/alat-1/commands
-curl -X POST http://localhost:3000/api/devices/alat-1/commands/12/ack \
+export AGRO_DEVICE_TOKENS='{"core-1":"TOKEN_ALAT_1","core-2":"TOKEN_ALAT_2"}'
+curl -H 'X-Device-Token: TOKEN_ALAT_1' http://localhost:3000/api/devices/core-1/commands
+curl -X POST http://localhost:3000/api/devices/core-1/commands/12/ack \
   -H 'X-Device-Token: TOKEN_ALAT_1' \
   -H 'Content-Type: application/json' \
   -d '{"actual_position":"stop","success":true}'

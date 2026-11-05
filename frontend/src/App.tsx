@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   Camera,
   Check,
+  Copy,
   Cloud,
   CloudDrizzle,
   CloudFog,
@@ -250,6 +251,7 @@ function App() {
   const [sensorReadings, setSensorReadings] = useState<SensorReading[]>([])
   const [cameraStatus, setCameraStatus] = useState(emptyCameraStatus)
   const [apiOnline, setApiOnline] = useState(false)
+  const [copiedEndpoint, setCopiedEndpoint] = useState('')
   const [uptimeInput, setUptimeInput] = useState('3600')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
@@ -278,6 +280,16 @@ function App() {
   const cameraImageRef = useRef<HTMLImageElement>(null)
   const cameraTimerRef = useRef<number | null>(null)
   const predictionBusyRef = useRef(false)
+
+  async function copyEndpoint(path: string) {
+    try {
+      await navigator.clipboard.writeText(new URL(path, window.location.origin).toString())
+      setCopiedEndpoint(path)
+      window.setTimeout(() => setCopiedEndpoint(''), 1800)
+    } catch {
+      setCopiedEndpoint('error')
+    }
+  }
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -819,14 +831,14 @@ function App() {
               <p className="empty-devices">Belum ada alat terdaftar.</p>
             ) : devices.map((device) => (
               <div className="device-row" key={device.device_id}>
-                <span className={`device-indicator ${device.connection_status === 'stale' ? 'device-stale' : `device-${device.status}`}`} />
+                <span className={`device-indicator device-${device.status}`} />
                 <div className="device-identity">
                   <strong>{device.name}</strong>
                   <span>{device.device_id}</span>
                 </div>
-                <div className={`device-state ${device.connection_status === 'stale' ? 'device-state-stale' : `device-state-${device.status}`}`}>
-                  <strong>{device.connection_status === 'stale' ? 'KONEKSI TERLAMBAT' : device.status === 'hidup' ? 'HIDUP' : device.status === 'mati' ? 'MATI' : 'BELUM TERHUBUNG'}</strong>
-                  <span>{device.age_seconds === null ? 'Belum pernah melapor' : `Terakhir ${formatAge(device.age_seconds)}`}</span>
+                <div className={`device-state device-state-${device.status}`}>
+                  <strong>{device.status === 'hidup' ? 'HIDUP' : device.status === 'mati' ? 'MATI' : 'BELUM TERHUBUNG'}</strong>
+                  <span>{device.connection_status === 'stale' ? 'Laporan status terlambat' : device.age_seconds === null ? 'Belum pernah melapor' : `Terakhir ${formatAge(device.age_seconds)}`}</span>
                 </div>
               </div>
             ))}
@@ -1265,6 +1277,46 @@ function App() {
             </div>
           </div>
         </article>
+      </section>
+
+      <section className="api-docs-panel panel" aria-labelledby="api-docs-title">
+        <div className="panel-heading compact-heading">
+          <div>
+            <p className="section-index">05 / REFERENSI API</p>
+            <h2 id="api-docs-title">Endpoint siap disalin</h2>
+          </div>
+          <a className="docs-link" href="/docs" target="_blank" rel="noreferrer">
+            Buka Swagger <ArrowUpRight size={13} />
+          </a>
+        </div>
+        <div className="quick-endpoints">
+          {[
+            { method: 'GET', path: '/api/dashboard', label: 'Ringkasan dashboard' },
+            { method: 'GET', path: '/api/devices', label: 'Daftar perangkat' },
+            { method: 'GET', path: '/api/readings', label: 'Data sensor' },
+            { method: 'POST', path: '/api/telemetry', label: 'Kirim telemetri' },
+          ].map((endpoint) => (
+            <button
+              className="endpoint-copy"
+              key={endpoint.path}
+              type="button"
+              onClick={() => void copyEndpoint(endpoint.path)}
+              title={`Salin ${endpoint.path}`}
+            >
+              <span className={`endpoint-method ${endpoint.method.toLowerCase()}`}>{endpoint.method}</span>
+              <span className="endpoint-description">
+                <strong>{endpoint.label}</strong>
+                <code>{endpoint.path}</code>
+              </span>
+              <span className="endpoint-action" aria-label={copiedEndpoint === endpoint.path ? 'Tersalin' : 'Salin endpoint'}>
+                {copiedEndpoint === endpoint.path ? <Check size={15} /> : <Copy size={15} />}
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="form-footnote" role="status">
+          {copiedEndpoint === 'error' ? 'Gagal menyalin. Coba lagi.' : copiedEndpoint ? 'Link API tersalin ke clipboard.' : 'Klik endpoint untuk menyalin link lengkap.'}
+        </p>
       </section>
 
       <footer className="footer"><span>AGRO-SEMBADA <i>×</i> PRADNYASIWI QUADTECH</span><span>SMPN 4 PAKEM <b>·</b> SISTEM MONITORING</span></footer>

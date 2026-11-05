@@ -1,6 +1,6 @@
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 
 type Unit = {
   device_id: string
@@ -14,12 +14,12 @@ type MachineOverviewProps = {
   theme: 'light' | 'dark'
 }
 
-const UNIT_IDS = Array.from({ length: 6 }, (_, index) => `alat-${index + 1}`)
+const UNIT_IDS = Array.from({ length: 6 }, (_, index) => `core-${index + 1}`)
 const BLOCK_COLORS = ['#7bd6d0', '#f4f0e2', '#f66c32', '#e83d4b', '#17538b']
 
 function statusColor(unit?: Unit) {
   if (unit?.connection_status === 'online' && unit.status === 'hidup') return '#b9d65b'
-  if (unit?.connection_status === 'stale') return '#d79b42'
+  if (unit?.status === 'mati') return '#e83d4b'
   return '#8d9990'
 }
 
@@ -189,40 +189,61 @@ function DCMotor({
 }
 
 function SideLift() {
-  const liftX = 2.14
-  const liftZ = 0.58
-  const railHeight = 3.45
+  const liftX = 2.9
+  const liftZ = 0.75
+  const railHeight = 3.6
+
   return (
     <group>
+      <ModularPost x={-liftX} z={liftZ} height={railHeight} />
+      <ModularPost x={-liftX} z={-liftZ} height={railHeight} />
       <ModularPost x={liftX} z={liftZ} height={railHeight} />
       <ModularPost x={liftX} z={-liftZ} height={railHeight} />
-      {[0.3, 0.75, 2.85, 3.4].map((height, index) => (
+
+      {[0.45, 1.12, 1.8, 2.45, 3.1, 3.5].map((height, index) => (
         <StuddedBeam
           key={height}
-          position={[liftX, height, 0]}
-          size={[0.3, 0.16, 1.36]}
-          color={BLOCK_COLORS[index % BLOCK_COLORS.length]}
+          position={[0, height, 0]}
+          size={[5.8, 0.15, 0.18]}
+          color={index % 2 === 0 ? '#f4f0e2' : '#7bd6d0'}
         />
       ))}
-      <Beam position={[1.8, 1.15, 0]} size={[1.05, 0.14, 0.16]} color="#f4f0e2" />
-      <Beam position={[1.8, 2.55, 0]} size={[1.05, 0.14, 0.16]} color="#f66c32" />
-      <StuddedBeam position={[liftX, 1.62, 0]} size={[0.92, 0.15, 1.32]} color="#7bd6d0" />
-      <Beam position={[1.88, 1.79, 0]} size={[0.82, 0.09, 0.9]} color="#f4f0e2" />
-      <Gear position={[liftX + 0.41, 0.75, 0.92]} radius={0.29} />
-      <Gear position={[liftX + 0.2, 3.0, 0.76]} radius={0.29} />
-      <DCMotor position={[liftX - 0.2, 0.75, 0.92]} />
-      <Beam position={[liftX + 0.28, 3.08, 0]} size={[0.74, 0.46, 0.85]} color="#f4f0e2" />
-      <Beam position={[liftX + 0.68, 3.1, 0]} size={[0.12, 0.58, 0.72]} color="#f66c32" />
-      <Beam position={[liftX + 0.33, 2.88, 0.45]} size={[0.52, 0.09, 0.08]} color="#17538b" />
-      <ServoMotor position={[liftX + 0.36, 2.5, 0.83]} rotationY={Math.PI / 2} />
+
+      <Beam position={[0, 1.25, 0]} size={[2.95, 0.14, 1.8]} color="#dfe7e1" />
+      <Beam position={[0, 2.9, 0]} size={[3.2, 0.12, 1.4]} color="#f4f0e2" />
+      <Beam position={[0, 3.42, 0]} size={[2.6, 0.12, 0.9]} color="#3d7ca0" />
+
+      <Beam position={[-1.1, 2.9, 0]} size={[0.08, 1.2, 0.08]} color="#f66c32" />
+      <Beam position={[1.1, 2.9, 0]} size={[0.08, 1.2, 0.08]} color="#f66c32" />
+
+      <Beam position={[-1.85, 3.28, 0]} size={[0.76, 0.18, 0.18]} color="#f66c32" />
+      <Beam position={[1.85, 3.28, 0]} size={[0.76, 0.18, 0.18]} color="#f66c32" />
+
+      <group position={[0, 2.0, 1.1]}>
+        <Beam position={[0, 0, 0]} size={[0.9, 0.12, 0.12]} color="#f66c32" />
+        <Beam position={[0.58, 0, 0]} size={[0.12, 0.5, 0.12]} color="#f4f0e2" />
+      </group>
+
+      <group position={[0, 1.4, -1.15]}>
+        <Beam position={[0, 0, 0]} size={[1.4, 0.12, 0.12]} color="#f4f0e2" />
+        <Beam position={[-0.7, 0.12, 0]} size={[0.12, 0.4, 0.12]} color="#7bd6d0" />
+      </group>
+
+      <Beam position={[0, 2.25, 0]} size={[0.18, 1.05, 0.18]} color="#0d1c26" />
+      <Beam position={[0, 2.25, 0.72]} size={[0.18, 1.05, 0.18]} color="#0d1c26" />
+      <Beam position={[0, 2.25, -0.72]} size={[0.18, 1.05, 0.18]} color="#0d1c26" />
+
+      <Gear position={[-1.72, 1.3, 1.45]} radius={0.34} />
+      <Gear position={[1.72, 1.3, 1.45]} radius={0.34} />
+      <DCMotor position={[0, 0.72, 1.1]} rotationY={Math.PI / 2} />
+      <ServoMotor position={[-0.92, 2.8, 0.92]} rotationY={Math.PI / 2} />
+      <ServoMotor position={[0.92, 2.8, 0.92]} rotationY={Math.PI / 2} />
     </group>
   )
 }
 
 function MainMachine({ devices }: { devices: Unit[] }) {
-  const halfWidth = 1.52
-  const halfDepth = 0.9
-  const frameHeight = 3.35
+  const frameHeight = 3.6
   const unitById = new Map(devices.map((unit) => [unit.device_id, unit]))
 
   return (
@@ -232,43 +253,60 @@ function MainMachine({ devices }: { devices: Unit[] }) {
       <directionalLight position={[-5, 4, -4]} intensity={1.1} color="#c6e7dc" />
       <gridHelper args={[12, 20, '#788a82', '#bdc9c1']} position={[0, -0.04, 0]} />
 
-      {[-halfWidth, halfWidth].flatMap((x) => [-halfDepth, halfDepth].map((z) => (
-        <ModularPost key={`${x}-${z}`} x={x} z={z} height={frameHeight} />
-      )))}
+      <Beam position={[0, 0.34, 0]} size={[5.8, 0.2, 3.2]} color="#ebeeea" />
+      <Beam position={[0, 0.82, 0]} size={[5.2, 0.18, 2.8]} color="#f5f1eb" />
 
-      {[0.14, 3.35].flatMap((y) => [
-        <StuddedBeam key={`x-${y}`} position={[0, y, -halfDepth]} size={[3.18, 0.17, 0.18]} color="#7bd6d0" />,
-        <StuddedBeam key={`z-${y}`} position={[0, y, halfDepth]} size={[3.18, 0.17, 0.18]} color="#f66c32" />,
-        <Beam key={`side-a-${y}`} position={[-halfWidth, y, 0]} size={[0.18, 0.17, 1.8]} color="#f4f0e2" />,
-        <Beam key={`side-b-${y}`} position={[halfWidth, y, 0]} size={[0.18, 0.17, 1.8]} color="#e83d4b" />,
-      ])}
+      <Beam position={[-2.85, 0.35, -1.95]} size={[0.8, 0.8, 0.8]} color="#dfe4e1" />
+      <Beam position={[2.85, 0.35, -1.95]} size={[0.8, 0.8, 0.8]} color="#dfe4e1" />
+      <Beam position={[-2.85, 0.35, 1.95]} size={[0.8, 0.8, 0.8]} color="#dfe4e1" />
+      <Beam position={[2.85, 0.35, 1.95]} size={[0.8, 0.8, 0.8]} color="#dfe4e1" />
 
-      {[1.02, 2.55].flatMap((y, index) => [
-        <StuddedBeam key={`cross-x-${y}`} position={[0, y, -halfDepth]} size={[3.1, 0.14, 0.17]} color={BLOCK_COLORS[index + 1]} />,
-        <StuddedBeam key={`cross-z-${y}`} position={[0, y, halfDepth]} size={[3.1, 0.14, 0.17]} color={BLOCK_COLORS[index + 2]} />,
-      ])}
+      <ModularPost x={-2.7} z={-1.8} height={frameHeight} />
+      <ModularPost x={2.7} z={-1.8} height={frameHeight} />
+      <ModularPost x={-2.7} z={1.8} height={frameHeight} />
+      <ModularPost x={2.7} z={1.8} height={frameHeight} />
 
-      <Beam position={[0, 1.65, 0]} size={[2.75, 0.12, 1.42]} color="#23343b" />
-      <Beam position={[0, 1.74, 0]} size={[2.58, 0.1, 1.24]} color="#f4f0e2" />
-      {Array.from({ length: 9 }, (_, index) => (
-        <mesh key={index} position={[-1.12 + index * 0.28, 1.84, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-          <cylinderGeometry args={[0.075, 0.075, 1.12, 10]} />
-          <meshStandardMaterial color={index % 2 ? '#68747a' : '#9ba6a2'} metalness={0.18} roughness={0.48} />
-        </mesh>
+      {[0.15, 1.8, 3.25].map((y, index) => (
+        <Fragment key={`frame-row-${y}`}>
+          <StuddedBeam position={[-0.15, y, -1.82]} size={[5.1, 0.16, 0.18]} color={index % 2 === 0 ? '#f4f0e2' : '#7bd6d0'} />
+          <StuddedBeam position={[-0.15, y, 1.82]} size={[5.1, 0.16, 0.18]} color={index % 2 === 0 ? '#f4f0e2' : '#7bd6d0'} />
+        </Fragment>
       ))}
 
-      <DCMotor position={[0.72, 1.26, 1.03]} />
-      <ServoMotor position={[-0.68, 2.08, 1.03]} />
-      <ServoMotor position={[0.43, 2.08, 1.03]} />
+      {[-2.3, -0.75, 0.8, 2.3].map((x, index) => (
+        <Beam
+          key={`cross-${x}`}
+          position={[x, 1.8, 0]}
+          size={[0.8, 0.12, 2.3]}
+          color={index % 2 === 0 ? '#f4f0e2' : '#7bd6d0'}
+        />
+      ))}
 
-      <Beam position={[-0.55, 2.58, 0]} size={[0.12, 0.9, 0.12]} color="#f66c32" />
-      <Beam position={[0.55, 2.58, 0]} size={[0.12, 0.9, 0.12]} color="#7bd6d0" />
-      <StuddedBeam position={[0, 3.0, 0]} size={[1.15, 0.14, 0.18]} color="#f4f0e2" />
+      <Beam position={[0, 2.15, 0]} size={[4.9, 0.12, 1.25]} color="#f4f0e2" />
+      <Beam position={[0, 2.95, 0]} size={[4.4, 0.12, 1.0]} color="#f66c32" />
+      <Beam position={[0, 3.5, 0]} size={[3.85, 0.14, 0.8]} color="#7bd6d0" />
+
+      <Beam position={[-2.7, 2.5, 0]} size={[0.18, 1.05, 0.18]} color="#f66c32" />
+      <Beam position={[2.7, 2.5, 0]} size={[0.18, 1.05, 0.18]} color="#f66c32" />
+      <Beam position={[-2.7, 1.2, 0]} size={[0.12, 1.5, 0.12]} color="#f4f0e2" />
+      <Beam position={[2.7, 1.2, 0]} size={[0.12, 1.5, 0.12]} color="#f4f0e2" />
+
+      <Beam position={[0, 2.2, 1.68]} size={[0.18, 2.7, 0.18]} color="#0d1c26" />
+      <Beam position={[0, 2.2, -1.68]} size={[0.18, 2.7, 0.18]} color="#0d1c26" />
+
+      <Gear position={[-1.9, 1.75, 1.55]} radius={0.3} />
+      <Gear position={[1.9, 1.75, 1.55]} radius={0.3} />
+      <Gear position={[0, 2.2, 0.98]} radius={0.26} />
+
+      <DCMotor position={[-1.4, 0.88, 1.15]} rotationY={Math.PI / 2} />
+      <DCMotor position={[1.4, 0.88, 1.15]} rotationY={Math.PI / 2} />
+      <ServoMotor position={[-0.95, 2.8, 1.22]} rotationY={Math.PI / 2} />
+      <ServoMotor position={[0.95, 2.8, 1.22]} rotationY={Math.PI / 2} />
 
       {UNIT_IDS.map((deviceId, index) => (
-        <mesh key={deviceId} position={[-1.12 + index * 0.45, 3.48, 1.03]} castShadow>
-          <boxGeometry args={[0.16, 0.12, 0.07]} />
-          <meshStandardMaterial color={statusColor(unitById.get(deviceId))} emissive={statusColor(unitById.get(deviceId))} emissiveIntensity={0.34} />
+        <mesh key={deviceId} position={[-1.65 + index * 0.82, 3.72, 1.9]} castShadow>
+          <boxGeometry args={[0.18, 0.12, 0.08]} />
+          <meshStandardMaterial color={statusColor(unitById.get(deviceId))} emissive={statusColor(unitById.get(deviceId))} emissiveIntensity={0.32} />
         </mesh>
       ))}
 
@@ -281,7 +319,7 @@ function MainMachine({ devices }: { devices: Unit[] }) {
         maxDistance={13}
         minPolarAngle={0.18}
         maxPolarAngle={2.85}
-        target={[0.35, 1.72, 0]}
+        target={[0.2, 1.8, 0]}
       />
     </>
   )
@@ -342,8 +380,8 @@ export default function MachineOverview({ devices, theme }: MachineOverviewProps
               const unit = devices.find((device) => device.device_id === deviceId)
               const status = unit?.connection_status === 'online' && unit.status === 'hidup'
                 ? 'Online'
-                : unit?.connection_status === 'stale'
-                  ? 'Terlambat'
+                : unit?.status === 'mati'
+                  ? 'Mati'
                   : 'Belum aktif'
               return (
                 <div className="machine-unit-status" key={deviceId}>

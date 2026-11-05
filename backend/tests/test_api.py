@@ -17,6 +17,119 @@ class FakeClassifier:
         return self.prediction
 
 
+def test_artecrobo_origin_can_access_api_methods_and_headers(tmp_path: Path) -> None:
+    app = create_app(tmp_path / 'test.db', FakeClassifier())
+    origin = 'https://app.artec-kk.co.jp'
+    with TestClient(app) as client:
+        response = client.options(
+            '/api/components/example',
+            headers={
+                'Origin': origin,
+                'Access-Control-Request-Method': 'PUT',
+                'Access-Control-Request-Headers': 'content-type,x-device-token',
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers['access-control-allow-origin'] == origin
+    assert 'PUT' in response.headers['access-control-allow-methods']
+    assert 'x-device-token' in response.headers['access-control-allow-headers'].lower()
+
+
+def test_artec_text_api_reports_individual_values_and_all_online(tmp_path: Path) -> None:
+    app = create_app(tmp_path / 'test.db', FakeClassifier())
+    with TestClient(app) as client:
+        initial_all_online = client.get('/api/artec/devices/all-online')
+        status = client.post('/api/artec/devices/core-1/status?status=hidup')
+        online = client.get('/api/artec/devices/core-1/online')
+        device_status = client.get('/api/artec/devices/core-1/status')
+        remaining_devices_online = client.get('/api/artec/devices/all-online')
+
+        for number in range(2, 7):
+                client.post(f'/api/artec/devices/core-{number}/status?status=hidup')
+        all_online = client.get('/api/artec/devices/all-online')
+
+        reading = client.post(
+            '/api/artec/devices/core-1/readings'
+            '?sensor_id=light-1&sensor_type=light&value=360&unit=lux'
+        )
+        reading_value = client.get('/api/artec/readings/core-1/light-1/value')
+        telemetry = client.post(
+            '/api/artec/telemetry?uptime_seconds=7250&status=running'
+        )
+        uptime = client.get('/api/artec/telemetry/uptime')
+        telemetry_status = client.get('/api/artec/telemetry/status')
+        component = client.post(
+            '/api/components',
+            json={
+                'component_id': 'motor-1',
+                'name': 'Motor 1',
+                'component_type': 'dc_motor',
+                'device_id': 'core-1',
+            },
+        )
+        condition = client.post(
+            '/api/artec/devices/core-1/components/motor-1/condition?condition=normal'
+        )
+        latest_condition = client.get(
+            '/api/artec/devices/core-1/components/motor-1/condition'
+        )
+
+    assert initial_all_online.text == 'false'
+    assert initial_all_online.headers['content-type'].startswith('text/plain')
+    assert status.text == 'hidup'
+    assert status.headers['content-type'].startswith('text/plain')
+    assert online.text == 'true'
+    assert device_status.text == 'hidup'
+    assert remaining_devices_online.text == 'false'
+    assert all_online.text == 'true'
+    assert reading.text == 'tersimpan'
+    assert reading_value.text == '360.0'
+    assert telemetry.text == 'tersimpan'
+    assert uptime.text == '7250'
+    assert telemetry_status.text == 'running'
+    assert component.status_code == 201
+    assert condition.text == 'tersimpan'
+    assert condition.headers['content-type'].startswith('text/plain')
+    assert latest_condition.text == 'normal'
+
+
+def test_artec_aliases_cover_control_events_weather_and_components(tmp_path: Path) -> None:
+    app = create_app(
+        tmp_path / 'test.db',
+        FakeClassifier(),
+        weather_provider=lambda: {'condition': 'Cerah', 'temperature_c': 23.5},
+    )
+    with TestClient(app) as client:
+        component = client.post(
+            '/api/artec/components'
+            '?component_id=lamp-1&name=Lampu&component_type=light&device_id=core-1'
+        )
+        component_name = client.get('/api/artec/components/lamp-1/name')
+        components = client.get('/api/artec/components')
+        weather = client.get('/api/artec/weather/temperature_c')
+        mode = client.post('/api/artec/control/mode?mode=manual')
+        actuator = client.post('/api/artec/control/actuators/roof?position=closed')
+        target = client.get('/api/artec/control/actuators/roof/target_position')
+        event = client.post('/api/artec/events?event_type=artec_test&value=ok')
+        events = client.get('/api/artec/events?limit=1')
+        emergency = client.post('/api/artec/emergency?mode=on')
+        emergency_state = client.get('/api/artec/emergency')
+        client.post('/api/artec/emergency?mode=off')
+
+    assert component.text == 'tersimpan'
+    assert component_name.text == 'Lampu'
+    assert 'lamp-1|Lampu|core-1' in components.text
+    assert weather.text == '23.5'
+    assert mode.text == 'manual'
+    assert actuator.text.isdigit()
+    assert target.text == 'closed'
+    assert event.text == 'tersimpan'
+    assert 'artec_test|device|ok|' in events.text
+    assert emergency.text == 'on'
+    assert emergency_state.text == 'on'
+
+
 def test_telemetry_is_saved_and_returned(tmp_path: Path) -> None:
     app = create_app(tmp_path / 'test.db', FakeClassifier())
     with TestClient(app) as client:
@@ -40,7 +153,7 @@ def test_sensor_readings_accept_json_and_url_parameters(tmp_path: Path) -> None:
     app = create_app(tmp_path / 'test.db', FakeClassifier())
     with TestClient(app) as client:
         json_reading = client.post(
-            '/api/devices/alat-1/readings',
+            '/api/devices/core-1/readings',
             json={
                 'sensor_id': 'light-1',
                 'sensor_type': 'light',
@@ -49,13 +162,13 @@ def test_sensor_readings_accept_json_and_url_parameters(tmp_path: Path) -> None:
             },
         )
         query_reading = client.post(
-            '/api/devices/alat-2/readings'
+            '/api/devices/core-2/readings'
             '?sensor_id=sound-1&sensor_type=sound&value=47&unit=dB'
         )
         history = client.get('/api/readings?limit=10').json()
         device = next(
             item for item in client.get('/api/devices').json()
-            if item['device_id'] == 'alat-1'
+            if item['device_id'] == 'core-1'
         )
         unknown_device = client.post(
             '/api/devices/alat-7/readings',
@@ -81,29 +194,29 @@ def test_component_condition_reports_keep_history_and_enforce_owner(tmp_path: Pa
                 'component_id': 'elevator-motor-1',
                 'name': 'Motor elevator 1',
                 'component_type': 'dc_motor',
-                'device_id': 'alat-1',
+                'device_id': 'core-1',
             },
         )
         first_report = client.post(
-            '/api/devices/alat-1/components/elevator-motor-1/status?condition=normal'
+            '/api/devices/core-1/components/elevator-motor-1/status?condition=normal'
         )
         second_report = client.post(
-            '/api/devices/alat-1/components/elevator-motor-1/status?condition=perlu_dicek'
+            '/api/devices/core-1/components/elevator-motor-1/status?condition=perlu_dicek'
         )
         wrong_owner = client.post(
-            '/api/devices/alat-2/components/elevator-motor-1/status?condition=rusak'
+            '/api/devices/core-2/components/elevator-motor-1/status?condition=rusak'
         )
         unknown_component = client.post(
-            '/api/devices/alat-1/components/missing/status?condition=normal'
+            '/api/devices/core-1/components/missing/status?condition=normal'
         )
         unmapped_component = client.post(
-            '/api/devices/alat-1/components/inventory-dc-motors/status?condition=normal'
+            '/api/devices/core-1/components/inventory-dc-motors/status?condition=normal'
         )
         empty_condition = client.post(
-            '/api/devices/alat-1/components/elevator-motor-1/status?condition=%20%20'
+            '/api/devices/core-1/components/elevator-motor-1/status?condition=%20%20'
         )
         oversized_condition = client.post(
-            '/api/devices/alat-1/components/elevator-motor-1/status?condition='
+            '/api/devices/core-1/components/elevator-motor-1/status?condition='
             f'{"x" * 81}'
         )
         latest_component = next(
@@ -111,7 +224,7 @@ def test_component_condition_reports_keep_history_and_enforce_owner(tmp_path: Pa
             if item['component_id'] == 'elevator-motor-1'
         )
         history = client.get(
-            '/api/component-condition-reports?device_id=alat-1'
+            '/api/component-condition-reports?device_id=core-1'
             '&component_id=elevator-motor-1&limit=10'
         )
         component_position = latest_component['current_value']
@@ -137,7 +250,7 @@ def test_six_devices_can_report_status(tmp_path: Path) -> None:
         initial = client.get('/api/devices')
         updated = client.post(
             '/api/devices/status',
-            json={'device_id': 'alat-2', 'status': 'hidup'},
+            json={'device_id': 'core-2', 'status': 'hidup'},
         )
         created = client.post(
             '/api/devices',
@@ -148,7 +261,7 @@ def test_six_devices_can_report_status(tmp_path: Path) -> None:
             json={'device_id': 'pompa-air', 'status': 'mati'},
         )
         url_status = client.post(
-            '/api/devices/status?device_id=alat-3&status=hidup'
+            '/api/devices/status?device_id=core-3&status=hidup'
         )
         missing_status = client.post('/api/devices/status')
         statuses = client.get('/api/devices').json()
@@ -160,11 +273,11 @@ def test_six_devices_can_report_status(tmp_path: Path) -> None:
     assert initial.status_code == 200
     assert len(initial.json()) == 6
     assert all(device['status'] == 'belum_terhubung' for device in initial.json())
-    assert initial.json()[0]['name'] == 'Alat 1'
+    assert initial.json()[0]['name'] == 'Core Unit 1'
     assert updated.status_code == 200
     assert updated.json()['status'] == 'hidup'
     assert updated.json()['last_seen'] is not None
-    assert next(device for device in statuses if device['device_id'] == 'alat-2')['status'] == 'hidup'
+    assert next(device for device in statuses if device['device_id'] == 'core-2')['status'] == 'hidup'
     assert created.status_code == 201
     assert created.json()['name'] == 'Pompa Air'
     assert created_status.json()['status'] == 'mati'
@@ -173,6 +286,40 @@ def test_six_devices_can_report_status(tmp_path: Path) -> None:
     assert missing_status.status_code == 422
     assert next(device for device in statuses if device['device_id'] == 'pompa-air')['status'] == 'mati'
     assert duplicate.status_code == 409
+
+
+def test_core_status_endpoint_expires_to_mati_after_ten_seconds(tmp_path: Path) -> None:
+    database_path = tmp_path / 'test.db'
+    app = create_app(database_path, FakeClassifier())
+    with TestClient(app) as client:
+        heartbeat = client.post('/api/devices/core-1/status', json={'status': 'hidup'})
+        current_status = client.get('/api/devices/core-1/status')
+        url_heartbeat = client.post('/api/devices/core-2/status?status=hidup')
+        with sqlite3.connect(database_path) as connection:
+            expired_at = (datetime.now(timezone.utc) - timedelta(seconds=11)).isoformat()
+            connection.execute(
+                'UPDATE device_status SET last_seen = ? WHERE device_id = ?',
+                (expired_at, 'core-1'),
+            )
+        expired = next(
+            item for item in client.get('/api/devices').json()
+            if item['device_id'] == 'core-1'
+        )
+        unknown_core = client.post('/api/devices/core-unknown/status', json={'status': 'hidup'})
+        unknown_status = client.get('/api/devices/core-unknown/status')
+
+    assert heartbeat.status_code == 200
+    assert heartbeat.json()['status'] == 'hidup'
+    assert current_status.status_code == 200
+    assert current_status.json()['status'] == 'hidup'
+    assert current_status.json()['connection_status'] == 'online'
+    assert url_heartbeat.status_code == 200
+    assert url_heartbeat.json()['status'] == 'hidup'
+    assert expired['status'] == 'mati'
+    assert expired['connection_status'] == 'stale'
+    assert expired['age_seconds'] >= 10
+    assert unknown_core.status_code == 404
+    assert unknown_status.status_code == 404
 
 
 def test_estimated_component_inventory_stays_unassigned_and_disabled(tmp_path: Path) -> None:
@@ -234,23 +381,81 @@ def test_device_status_reports_stale_and_never_seen_connections(tmp_path: Path) 
     with TestClient(app) as client:
         client.post(
             '/api/devices/status',
-            json={'device_id': 'alat-1', 'status': 'hidup'},
+            json={'device_id': 'core-1', 'status': 'hidup'},
         )
         stale_time = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
         with sqlite3.connect(database_path) as connection:
             connection.execute(
                 'UPDATE device_status SET last_seen = ? WHERE device_id = ?',
-                (stale_time, 'alat-1'),
+                (stale_time, 'core-1'),
             )
         devices = client.get('/api/devices').json()
 
-    stale_device = next(device for device in devices if device['device_id'] == 'alat-1')
-    never_seen_device = next(device for device in devices if device['device_id'] == 'alat-2')
-    assert stale_device['status'] == 'hidup'
+    stale_device = next(device for device in devices if device['device_id'] == 'core-1')
+    never_seen_device = next(device for device in devices if device['device_id'] == 'core-2')
+    assert stale_device['status'] == 'mati'
     assert stale_device['connection_status'] == 'stale'
     assert stale_device['age_seconds'] >= 60
     assert never_seen_device['connection_status'] == 'never_seen'
     assert never_seen_device['age_seconds'] is None
+    
+
+def test_legacy_alat_ids_migrate_to_core_ids_and_keep_history(tmp_path: Path) -> None:
+    database_path = tmp_path / 'legacy-device-ids.db'
+    app = create_app(database_path, FakeClassifier())
+    with TestClient(app) as client:
+        client.post(
+            '/api/components',
+            json={
+                'component_id': 'motor-1',
+                'name': 'Motor 1',
+                'component_type': 'dc_motor',
+                'device_id': 'core-1',
+            },
+        )
+        client.post(
+            '/api/devices/core-1/readings',
+            json={'sensor_id': 'light-1', 'sensor_type': 'light', 'value': 360},
+        )
+        client.post('/api/devices/core-1/components/motor-1/status?condition=normal')
+        client.post('/api/devices/core-1/status?status=hidup')
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "UPDATE device_status SET device_id = 'alat-1', name = 'Alat 1' "
+            "WHERE device_id = 'core-1'"
+        )
+        for table in (
+            'sensor_readings',
+            'device_components',
+            'component_condition_reports',
+            'actuator_commands',
+        ):
+            connection.execute(
+                f"UPDATE {table} SET device_id = 'alat-1' WHERE device_id = 'core-1'"
+            )
+        connection.execute(
+            "UPDATE operation_events SET source = 'alat-1' WHERE source = 'core-1'"
+        )
+
+    migrated_app = create_app(database_path, FakeClassifier())
+    with TestClient(migrated_app) as client:
+        devices = client.get('/api/devices').json()
+        readings = client.get('/api/readings?device_id=core-1').json()
+        components = client.get('/api/components?device_id=core-1').json()
+        reports = client.get(
+            '/api/component-condition-reports?device_id=core-1&component_id=motor-1'
+        ).json()
+        events = client.get('/api/events?limit=20').json()
+
+    assert {device['device_id'] for device in devices} == {
+        f'core-{number}' for number in range(1, 7)
+    }
+    assert next(device for device in devices if device['device_id'] == 'core-1')['name'] == 'Core Unit 1'
+    assert readings[0]['device_id'] == 'core-1'
+    assert components[0]['device_id'] == 'core-1'
+    assert reports[0]['device_id'] == 'core-1'
+    assert any(event['source'] == 'core-1' for event in events)
 
 
 def test_unacknowledged_command_times_out_and_is_logged(tmp_path: Path) -> None:
@@ -283,11 +488,11 @@ def test_device_commands_are_authenticated_and_scoped_to_component_owner(
 ) -> None:
     monkeypatch.setenv(
         'AGRO_DEVICE_TOKENS',
-        '{"alat-1":"device-token-1","alat-2":"device-token-2"}',
+        '{"core-1":"device-token-1","core-2":"device-token-2"}',
     )
     app = create_app(tmp_path / 'test.db', FakeClassifier())
     with TestClient(app) as client:
-        for device_id in ('alat-1', 'alat-2'):
+        for device_id in ('core-1', 'core-2'):
             client.post(
                 '/api/devices/status',
                 json={'device_id': device_id, 'status': 'hidup'},
@@ -298,7 +503,7 @@ def test_device_commands_are_authenticated_and_scoped_to_component_owner(
                 'component_id': 'elevator-motor-1',
                 'name': 'Motor elevator 1',
                 'component_type': 'dc_motor',
-                'device_id': 'alat-1',
+                'device_id': 'core-1',
                 'confirmed': True,
                 'enabled': True,
                 'command_values': ['forward', 'reverse', 'stop'],
@@ -306,21 +511,21 @@ def test_device_commands_are_authenticated_and_scoped_to_component_owner(
             },
         )
         command = client.post(
-            '/api/devices/alat-1/components/elevator-motor-1/commands',
+            '/api/devices/core-1/components/elevator-motor-1/commands',
             json={'position': 'forward'},
         )
-        missing_token = client.get('/api/devices/alat-1/commands')
+        missing_token = client.get('/api/devices/core-1/commands')
         owner_commands = client.get(
-            '/api/devices/alat-1/commands',
+            '/api/devices/core-1/commands',
             headers={'X-Device-Token': 'device-token-1'},
         )
         legacy_commands = client.get('/api/device/commands')
         other_commands = client.get(
-            '/api/devices/alat-2/commands',
+            '/api/devices/core-2/commands',
             headers={'X-Device-Token': 'device-token-2'},
         )
         wrong_owner_ack = client.post(
-            f"/api/devices/alat-2/commands/{command.json()['id']}/ack",
+            f"/api/devices/core-2/commands/{command.json()['id']}/ack",
             headers={'X-Device-Token': 'device-token-2'},
             json={'actual_position': 'forward'},
         )
@@ -329,11 +534,11 @@ def test_device_commands_are_authenticated_and_scoped_to_component_owner(
             json={'actual_position': 'forward'},
         )
         acknowledged = client.post(
-            f"/api/devices/alat-1/commands/{command.json()['id']}/ack",
+            f"/api/devices/core-1/commands/{command.json()['id']}/ack",
             headers={'X-Device-Token': 'device-token-1'},
             json={'actual_position': 'forward'},
         )
-        components = client.get('/api/components?device_id=alat-1').json()
+        components = client.get('/api/components?device_id=core-1').json()
 
     assert component.status_code == 201
     assert command.status_code == 200
@@ -352,7 +557,7 @@ def test_unconfirmed_component_cannot_be_controlled(tmp_path: Path) -> None:
     with TestClient(app) as client:
         client.post(
             '/api/devices/status',
-            json={'device_id': 'alat-1', 'status': 'hidup'},
+            json={'device_id': 'core-1', 'status': 'hidup'},
         )
         component = client.post(
             '/api/components',
@@ -360,12 +565,12 @@ def test_unconfirmed_component_cannot_be_controlled(tmp_path: Path) -> None:
                 'component_id': 'unknown-motor',
                 'name': 'Motor belum dipetakan',
                 'component_type': 'dc_motor',
-                'device_id': 'alat-1',
+                'device_id': 'core-1',
                 'command_values': ['forward', 'stop'],
             },
         )
         command = client.post(
-            '/api/devices/alat-1/components/unknown-motor/commands',
+            '/api/devices/core-1/components/unknown-motor/commands',
             json={'position': 'forward'},
         )
 
@@ -377,12 +582,12 @@ def test_emergency_replaces_pending_component_command_with_safe_value(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv('AGRO_DEVICE_TOKENS', '{"alat-1":"device-token-1"}')
+    monkeypatch.setenv('AGRO_DEVICE_TOKENS', '{"core-1":"device-token-1"}')
     app = create_app(tmp_path / 'test.db', FakeClassifier())
     with TestClient(app) as client:
         client.post(
             '/api/devices/status',
-            json={'device_id': 'alat-1', 'status': 'hidup'},
+            json={'device_id': 'core-1', 'status': 'hidup'},
         )
         client.post(
             '/api/components',
@@ -390,7 +595,7 @@ def test_emergency_replaces_pending_component_command_with_safe_value(
                 'component_id': 'elevator-motor-1',
                 'name': 'Motor elevator 1',
                 'component_type': 'dc_motor',
-                'device_id': 'alat-1',
+                'device_id': 'core-1',
                 'confirmed': True,
                 'enabled': True,
                 'command_values': ['forward', 'stop'],
@@ -398,16 +603,16 @@ def test_emergency_replaces_pending_component_command_with_safe_value(
             },
         )
         client.post(
-            '/api/devices/alat-1/components/elevator-motor-1/commands',
+            '/api/devices/core-1/components/elevator-motor-1/commands',
             json={'position': 'forward'},
         )
         emergency = client.post('/api/emergency', json={'enabled': True})
         commands = client.get(
-            '/api/devices/alat-1/commands',
+            '/api/devices/core-1/commands',
             headers={'X-Device-Token': 'device-token-1'},
         ).json()
         blocked = client.post(
-            '/api/devices/alat-1/components/elevator-motor-1/commands',
+            '/api/devices/core-1/components/elevator-motor-1/commands',
             json={'position': 'forward'},
         )
 

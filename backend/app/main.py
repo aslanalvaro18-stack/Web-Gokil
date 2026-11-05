@@ -25,6 +25,7 @@ from app.schemas import (
     DeviceCreate,
     DeviceComponentCreate,
     DeviceComponentRecord,
+    DeviceCoreStatusUpdate,
     DeviceStatusRecord,
     DeviceStatusUpdate,
     DryingStart,
@@ -84,7 +85,7 @@ def create_app(
     minimum_confidence = float(os.getenv('AGRO_MIN_CONFIDENCE', '0.85'))
     access_max_age = int(os.getenv('AGRO_ACCESS_MAX_AGE_SECONDS', '15'))
     automation_interval = max(5, int(os.getenv('AGRO_AUTOMATION_INTERVAL_SECONDS', '15')))
-    device_stale_seconds = int(os.getenv('AGRO_DEVICE_STALE_SECONDS', '30'))
+    device_stale_seconds = int(os.getenv('AGRO_DEVICE_STALE_SECONDS', '10'))
     if device_stale_seconds < 1:
         raise ValueError('AGRO_DEVICE_STALE_SECONDS harus minimal 1 detik.')
     should_autostart_camera = camera_autostart if camera_autostart is not None else (
@@ -239,7 +240,8 @@ def create_app(
     allowed_origins = [
         origin.strip()
         for origin in os.getenv(
-            'AGRO_CORS_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173'
+            'AGRO_CORS_ORIGINS',
+            'http://localhost:5173,http://127.0.0.1:5173,https://app.artec-kk.co.jp',
         ).split(',')
         if origin.strip()
     ]
@@ -247,8 +249,8 @@ def create_app(
         CORSMiddleware,
         allow_origins=allowed_origins,
         allow_credentials=False,
-        allow_methods=['GET', 'POST'],
-        allow_headers=['Content-Type'],
+        allow_methods=['*'],
+        allow_headers=['*'],
     )
 
     @app.get('/api/health', response_class=PlainTextResponse)
@@ -366,6 +368,214 @@ def create_app(
     def read_device_status() -> list[dict]:
         return database.list_device_status(app.state.database_path, device_stale_seconds)
 
+    @app.get('/api/artec/health', response_class=PlainTextResponse)
+    def artec_health() -> str:
+        return 'ok'
+
+    @app.get('/api/artec/devices/all-online', response_class=PlainTextResponse)
+    def artec_all_devices_online() -> str:
+        devices = database.list_device_status(app.state.database_path, device_stale_seconds)
+        is_online = bool(devices) and all(
+            device['status'] == 'hidup' and device['connection_status'] == 'online'
+            for device in devices
+        )
+        return 'true' if is_online else 'false'
+
+    @app.get(
+        '/api/artec/devices/{device_id}/status',
+        response_class=PlainTextResponse,
+    )
+    def artec_device_status(device_id: str) -> str:
+        device = database.get_device_status(
+            app.state.database_path,
+            device_id,
+            device_stale_seconds,
+        )
+        return device['status'] if device else 'tidak_dikenal'
+
+    @app.get(
+        '/api/artec/devices/{device_id}/online',
+        response_class=PlainTextResponse,
+    )
+    def artec_device_online(device_id: str) -> str:
+        device = database.get_device_status(
+            app.state.database_path,
+            device_id,
+            device_stale_seconds,
+        )
+        is_online = bool(
+            device
+            and device['status'] == 'hidup'
+            and device['connection_status'] == 'online'
+        )
+        return 'true' if is_online else 'false'
+
+    @app.get(
+        '/api/artec/devices/{device_id}/age',
+        response_class=PlainTextResponse,
+    )
+    def artec_device_age(device_id: str) -> str:
+        device = database.get_device_status(
+            app.state.database_path,
+            device_id,
+            device_stale_seconds,
+        )
+        return str(device['age_seconds']) if device and device['age_seconds'] is not None else 'tidak_ada'
+
+    @app.get(
+        '/api/artec/devices/{device_id}/{field}',
+        response_class=PlainTextResponse,
+    )
+    def artec_device_field(
+        device_id: str,
+        field: Literal['name', 'last_seen'],
+    ) -> str:
+        device = database.get_device_status(
+            app.state.database_path,
+            device_id,
+            device_stale_seconds,
+        )
+        if device is None:
+            return 'tidak_dikenal'
+        return str(device[field]) if device[field] is not None else 'tidak_ada'
+
+    @app.get('/api/artec/telemetry/uptime', response_class=PlainTextResponse)
+    def artec_telemetry_uptime() -> str:
+        telemetry = database.latest_telemetry(app.state.database_path)
+        return str(telemetry['uptime_seconds']) if telemetry else 'tidak_ada_data'
+
+    @app.get('/api/artec/telemetry/status', response_class=PlainTextResponse)
+    def artec_telemetry_status() -> str:
+        telemetry = database.latest_telemetry(app.state.database_path)
+        return telemetry['status'] if telemetry else 'tidak_ada_data'
+
+    @app.get(
+        '/api/artec/readings/{device_id}/{sensor_id}/value',
+        response_class=PlainTextResponse,
+    )
+    def artec_sensor_value(device_id: str, sensor_id: str) -> str:
+        reading = database.get_latest_sensor_reading(
+            app.state.database_path,
+            device_id,
+            sensor_id,
+        )
+        return str(reading['value']) if reading else 'tidak_ada_data'
+
+    @app.get(
+        '/api/artec/readings/{device_id}/{sensor_id}/{field}',
+        response_class=PlainTextResponse,
+    )
+    def artec_sensor_field(
+        device_id: str,
+        sensor_id: str,
+        field: Literal['sensor_type', 'value', 'unit', 'recorded_at'],
+    ) -> str:
+        reading = database.get_latest_sensor_reading(
+            app.state.database_path,
+            device_id,
+            sensor_id,
+        )
+        if reading is None:
+            return 'tidak_ada_data'
+        return str(reading[field]) if reading[field] is not None else 'tidak_ada'
+
+    @app.get(
+        '/api/artec/devices/{device_id}/components/{component_id}/condition',
+        response_class=PlainTextResponse,
+    )
+    def artec_component_condition(device_id: str, component_id: str) -> str:
+        component = database.get_device_component(app.state.database_path, component_id)
+        if component is None or component['device_id'] != device_id:
+            return 'tidak_ditemukan'
+        return component['reported_condition'] or 'belum_dilaporkan'
+
+    @app.get('/api/artec/predictions/class', response_class=PlainTextResponse)
+    def artec_prediction_class() -> str:
+        return read_prediction_name()
+
+    @app.get('/api/artec/predictions/{field}', response_class=PlainTextResponse)
+    def artec_prediction_field(
+        field: Literal['id', 'class_name', 'confidence', 'access_status', 'captured_at'],
+    ) -> str:
+        prediction = database.latest_prediction(app.state.database_path)
+        if prediction is None:
+            return 'tidak_ada_data'
+        if field == 'access_status':
+            return access_response(prediction)['access_status']
+        if field == 'class_name':
+            return artec_prediction_class()
+        return str(prediction[field])
+
+    @app.get('/api/artec/access/status', response_class=PlainTextResponse)
+    def artec_access_status() -> str:
+        prediction = database.latest_prediction(app.state.database_path)
+        return access_response(prediction)['access_status']
+
+    @app.get('/api/artec/access/{field}', response_class=PlainTextResponse)
+    def artec_access_field(
+        field: Literal['is_trusted', 'identity', 'confidence', 'prediction_id', 'captured_at', 'expires_at'],
+    ) -> str:
+        value = access_response(database.latest_prediction(app.state.database_path))[field]
+        if value is None:
+            return 'tidak_ada'
+        if isinstance(value, bool):
+            return 'true' if value else 'false'
+        return str(value)
+
+    @app.post(
+        '/api/artec/devices/{device_id}/status',
+        response_class=PlainTextResponse,
+    )
+    def artec_update_device_status(
+        device_id: str,
+        status: Literal['hidup', 'mati'] = Query(),
+    ) -> str:
+        record = update_core_status(device_id, status=status)
+        return record['status']
+
+    @app.post(
+        '/api/artec/telemetry',
+        response_class=PlainTextResponse,
+    )
+    def artec_create_telemetry(
+        uptime_seconds: int = Query(ge=0),
+        status: str = Query(default='unknown', min_length=1, max_length=40),
+    ) -> str:
+        create_telemetry(uptime_seconds=uptime_seconds, status=status)
+        return 'tersimpan'
+
+    @app.post(
+        '/api/artec/devices/{device_id}/readings',
+        response_class=PlainTextResponse,
+    )
+    def artec_create_sensor_reading(
+        device_id: str,
+        sensor_id: str = Query(min_length=1, max_length=80),
+        sensor_type: str = Query(min_length=1, max_length=80),
+        value: float = Query(),
+        unit: str | None = Query(default=None, max_length=24),
+    ) -> str:
+        create_sensor_reading(
+            device_id,
+            sensor_id=sensor_id,
+            sensor_type=sensor_type,
+            value=value,
+            unit=unit,
+        )
+        return 'tersimpan'
+
+    @app.post(
+        '/api/artec/devices/{device_id}/components/{component_id}/condition',
+        response_class=PlainTextResponse,
+    )
+    def artec_report_component_condition(
+        device_id: str,
+        component_id: str,
+        condition: str = Query(min_length=1, max_length=80),
+    ) -> str:
+        report_component_condition(device_id, component_id, condition)
+        return 'tersimpan'
+
     @app.post('/api/devices', response_model=DeviceStatusRecord, status_code=201)
     def create_device(payload: DeviceCreate) -> dict:
         name = payload.name.strip()
@@ -379,6 +589,17 @@ def create_app(
         )
         if record is None:
             raise HTTPException(status_code=409, detail='ID alat sudah terdaftar.')
+        return record
+
+    @app.get('/api/devices/{device_id}/status', response_model=DeviceStatusRecord)
+    def read_core_status(device_id: str) -> dict:
+        record = database.get_device_status(
+            app.state.database_path,
+            device_id,
+            device_stale_seconds,
+        )
+        if record is None:
+            raise HTTPException(status_code=404, detail='ID core belum terdaftar.')
         return record
 
     @app.post('/api/devices/status', response_model=DeviceStatusRecord)
@@ -418,6 +639,43 @@ def create_app(
             app.state.database_path,
             'device_status_updated',
             resolved_device_id,
+            value=resolved_status,
+        )
+        return record
+
+    @app.post(
+        '/api/devices/{device_id}/status',
+        response_model=DeviceStatusRecord,
+        summary='Laporkan status Core Unit',
+        description=(
+            'Kirim status Core Unit melalui query URL atau JSON body tanpa header autentikasi. '
+            'POST berkala menjadi heartbeat; '
+            'status hidup berubah menjadi mati setelah batas stale terlewati.'
+        ),
+    )
+    def update_core_status(
+        device_id: str,
+        payload: DeviceCoreStatusUpdate | None = None,
+        status: Literal['hidup', 'mati'] | None = Query(default=None),
+    ) -> dict:
+        resolved_status = payload.status if payload is not None else status
+        if resolved_status is None:
+            raise HTTPException(
+                status_code=422,
+                detail='Kirim status=hidup atau status=mati di URL, atau melalui JSON body.',
+            )
+        record = database.update_device_status(
+            app.state.database_path,
+            device_id,
+            resolved_status,
+            device_stale_seconds,
+        )
+        if record is None:
+            raise HTTPException(status_code=404, detail='ID core belum terdaftar.')
+        database.add_operation_event(
+            app.state.database_path,
+            'device_status_updated',
+            device_id,
             value=resolved_status,
         )
         return record
@@ -840,6 +1098,336 @@ def create_app(
             return app.state.weather_provider()
         except WeatherUnavailableError as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
+
+    def format_text_rows(rows: list[dict], fields: tuple[str, ...]) -> str:
+        if not rows:
+            return 'kosong'
+        return '\n'.join(
+            '|'.join('' if row.get(field) is None else str(row[field]) for field in fields)
+            for row in rows
+        )
+
+    @app.get('/api/artec/camera/status', response_class=PlainTextResponse)
+    def artec_camera_state() -> str:
+        return camera_status_response()['state']
+
+    @app.get('/api/artec/camera/stream')
+    async def artec_camera_stream() -> StreamingResponse:
+        return await camera_stream()
+
+    @app.post('/api/artec/camera/rescan', response_class=PlainTextResponse)
+    def artec_camera_rescan() -> str:
+        return rescan_cameras()['state']
+
+    @app.post('/api/artec/camera/stop', response_class=PlainTextResponse)
+    def artec_camera_stop() -> str:
+        stop_camera()
+        return 'stopped'
+
+    @app.get('/api/artec/devices', response_class=PlainTextResponse)
+    def artec_devices() -> str:
+        devices = read_device_status()
+        return format_text_rows(devices, ('device_id', 'status', 'connection_status'))
+
+    @app.post('/api/artec/devices', response_class=PlainTextResponse)
+    def artec_register_device(
+        device_id: str = Query(min_length=1, max_length=40, pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$'),
+        name: str = Query(min_length=1, max_length=80),
+    ) -> str:
+        create_device(DeviceCreate(device_id=device_id, name=name))
+        return 'tersimpan'
+
+    @app.get('/api/artec/components', response_class=PlainTextResponse)
+    def artec_components(
+        device_id: str | None = Query(default=None, min_length=1, max_length=40),
+    ) -> str:
+        components = read_components(device_id)
+        return format_text_rows(components, ('component_id', 'name', 'device_id'))
+
+    @app.get(
+        '/api/artec/components/{component_id}/{field}',
+        response_class=PlainTextResponse,
+    )
+    def artec_component_field(
+        component_id: str,
+        field: Literal[
+            'name', 'component_type', 'device_id', 'current_value', 'target_value',
+            'reported_condition', 'enabled', 'confirmed',
+        ],
+    ) -> str:
+        component = database.get_device_component(app.state.database_path, component_id)
+        if component is None:
+            return 'tidak_ditemukan'
+        value = component.get(field)
+        if value is None:
+            return 'belum_ada'
+        if isinstance(value, bool):
+            return 'true' if value else 'false'
+        return str(value)
+
+    @app.post('/api/artec/components', response_class=PlainTextResponse)
+    def artec_create_component(
+        component_id: str = Query(min_length=1, max_length=80, pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$'),
+        name: str = Query(min_length=1, max_length=100),
+        component_type: str = Query(min_length=1, max_length=60),
+        device_id: str | None = Query(default=None, max_length=40),
+        confirmed: bool = Query(default=False),
+        enabled: bool = Query(default=False),
+        command_values: str = Query(default=''),
+        safe_value: str | None = Query(default=None, max_length=40),
+        estimated_count: str | None = Query(default=None, max_length=32),
+    ) -> str:
+        payload = DeviceComponentCreate(
+            component_id=component_id,
+            name=name,
+            component_type=component_type,
+            device_id=device_id,
+            confirmed=confirmed,
+            enabled=enabled,
+            command_values=[value for value in command_values.split(',') if value],
+            safe_value=safe_value,
+            estimated_count=estimated_count,
+        )
+        create_component(payload)
+        return 'tersimpan'
+
+    @app.post(
+        '/api/artec/components/{component_id}',
+        response_class=PlainTextResponse,
+    )
+    def artec_update_component(
+        component_id: str,
+        name: str = Query(min_length=1, max_length=100),
+        component_type: str = Query(min_length=1, max_length=60),
+        device_id: str | None = Query(default=None, max_length=40),
+        confirmed: bool = Query(default=False),
+        enabled: bool = Query(default=False),
+        command_values: str = Query(default=''),
+        safe_value: str | None = Query(default=None, max_length=40),
+        estimated_count: str | None = Query(default=None, max_length=32),
+    ) -> str:
+        payload = DeviceComponentCreate(
+            component_id=component_id,
+            name=name,
+            component_type=component_type,
+            device_id=device_id,
+            confirmed=confirmed,
+            enabled=enabled,
+            command_values=[value for value in command_values.split(',') if value],
+            safe_value=safe_value,
+            estimated_count=estimated_count,
+        )
+        update_component(component_id, payload)
+        return 'tersimpan'
+
+    @app.get('/api/artec/telemetry/history', response_class=PlainTextResponse)
+    def artec_telemetry_history(limit: int = Query(default=10, ge=1, le=100)) -> str:
+        records = read_telemetry(limit)
+        return format_text_rows(records, ('uptime_seconds', 'status', 'recorded_at'))
+
+    @app.get(
+        '/api/artec/readings/{device_id}',
+        response_class=PlainTextResponse,
+    )
+    def artec_reading_history(
+        device_id: str,
+        limit: int = Query(default=10, ge=1, le=500),
+    ) -> str:
+        records = read_sensor_readings(limit, device_id)
+        return format_text_rows(records, ('sensor_id', 'sensor_type', 'value', 'unit', 'recorded_at'))
+
+    @app.get(
+        '/api/artec/devices/{device_id}/components/{component_id}/reports',
+        response_class=PlainTextResponse,
+    )
+    def artec_condition_history(
+        device_id: str,
+        component_id: str,
+        limit: int = Query(default=10, ge=1, le=100),
+    ) -> str:
+        reports = read_component_condition_reports(limit, device_id, component_id)
+        return format_text_rows(reports, ('condition', 'reported_at'))
+
+    @app.post('/api/artec/predictions', response_class=PlainTextResponse)
+    async def artec_create_prediction(image: UploadFile = File(...)) -> str:
+        prediction = await create_prediction(image)
+        return prediction['access_status']
+
+    @app.get('/api/artec/dashboard/{field}', response_class=PlainTextResponse)
+    def artec_dashboard_field(
+        field: Literal['uptime_seconds', 'telemetry_status', 'prediction_class', 'access_status'],
+    ) -> str:
+        if field == 'uptime_seconds':
+            return artec_telemetry_uptime()
+        if field == 'telemetry_status':
+            return artec_telemetry_status()
+        if field == 'prediction_class':
+            return artec_prediction_class()
+        return artec_access_status()
+
+    @app.get('/api/artec/weather/{field}', response_class=PlainTextResponse)
+    def artec_weather_field(
+        field: Literal[
+            'condition', 'temperature_c', 'apparent_temperature_c', 'humidity_percent',
+            'precipitation_mm', 'wind_speed_kmh', 'weather_code', 'is_day',
+        ],
+    ) -> str:
+        weather = read_weather()
+        value = weather.get(field)
+        if value is None:
+            return 'tidak_ada_data'
+        if isinstance(value, bool):
+            return 'true' if value else 'false'
+        return str(value)
+
+    @app.get('/api/artec/control/{field}', response_class=PlainTextResponse)
+    def artec_control_field(
+        field: Literal[
+            'mode', 'emergency_mode', 'drying_elapsed_seconds', 'drying_target_seconds',
+            'drying_started_at', 'updated_at',
+        ],
+    ) -> str:
+        state = read_control_state()
+        value = state.get(field)
+        if value is None:
+            return 'tidak_ada'
+        if isinstance(value, bool):
+            return 'true' if value else 'false'
+        return str(value)
+
+    @app.get(
+        '/api/artec/control/actuators/{actuator}/{field}',
+        response_class=PlainTextResponse,
+    )
+    def artec_actuator_field(
+        actuator: str,
+        field: Literal['current_position', 'target_position', 'safe_position'],
+    ) -> str:
+        state = read_control_state()
+        record = next((item for item in state['actuators'] if item['name'] == actuator), None)
+        return str(record[field]) if record else 'tidak_ditemukan'
+
+    @app.post('/api/artec/control/mode', response_class=PlainTextResponse)
+    def artec_set_mode(mode: Literal['manual', 'auto'] = Query()) -> str:
+        return update_control_mode(mode=mode)['mode']
+
+    @app.post(
+        '/api/artec/control/actuators/{actuator}',
+        response_class=PlainTextResponse,
+    )
+    def artec_command_actuator(
+        actuator: str,
+        position: str = Query(min_length=1, max_length=40),
+    ) -> str:
+        command = command_actuator(actuator, position=position)
+        return str(command['id'])
+
+    @app.post('/api/artec/drying/start', response_class=PlainTextResponse)
+    def artec_start_drying(target_seconds: int = Query(ge=60, le=86400)) -> str:
+        start_drying(target_seconds=target_seconds)
+        return 'dimulai'
+
+    @app.post('/api/artec/drying/stop', response_class=PlainTextResponse)
+    def artec_stop_drying() -> str:
+        stop_drying()
+        return 'dihentikan'
+
+    @app.get('/api/artec/events', response_class=PlainTextResponse)
+    def artec_event_history(limit: int = Query(default=10, ge=1, le=200)) -> str:
+        events = read_events(limit)
+        return format_text_rows(events, ('event_type', 'source', 'value', 'occurred_at'))
+
+    @app.post('/api/artec/events', response_class=PlainTextResponse)
+    def artec_create_event(
+        event_type: str = Query(min_length=1, max_length=80),
+        value: str | None = Query(default=None, max_length=160),
+        duration_seconds: int | None = Query(default=None, ge=0),
+    ) -> str:
+        create_event(
+            event_type=event_type,
+            value=value,
+            duration_seconds=duration_seconds,
+            detail='{}',
+        )
+        return 'tersimpan'
+
+    @app.get('/api/artec/emergency', response_class=PlainTextResponse)
+    def artec_get_emergency() -> str:
+        return read_emergency_status()
+
+    @app.post('/api/artec/emergency', response_class=PlainTextResponse)
+    def artec_set_emergency(mode: Literal['on', 'off'] = Query()) -> str:
+        state = set_emergency(mode=mode)
+        return 'on' if state['emergency_mode'] else 'off'
+
+    @app.get('/api/artec/commands', response_class=PlainTextResponse)
+    def artec_pending_commands(limit: int = Query(default=20, ge=1, le=100)) -> str:
+        commands = read_device_commands(limit)
+        return format_text_rows(commands, ('id', 'actuator', 'position'))
+
+    @app.post(
+        '/api/artec/devices/{device_id}/components/{component_id}/commands',
+        response_class=PlainTextResponse,
+    )
+    def artec_command_component(
+        device_id: str,
+        component_id: str,
+        position: str = Query(min_length=1, max_length=40),
+    ) -> str:
+        command = command_device_component(device_id, component_id, position=position)
+        return str(command['id'])
+
+    @app.get(
+        '/api/artec/devices/{device_id}/commands',
+        response_class=PlainTextResponse,
+    )
+    def artec_device_commands(
+        device_id: str,
+        limit: int = Query(default=20, ge=1, le=100),
+        device_token: str | None = Header(default=None, alias='X-Device-Token'),
+    ) -> str:
+        commands = read_commands_for_device(device_id, limit, device_token)
+        return format_text_rows(commands, ('id', 'actuator', 'position', 'component_id'))
+
+    @app.post(
+        '/api/artec/devices/{device_id}/commands/{command_id}/ack',
+        response_class=PlainTextResponse,
+    )
+    def artec_ack_device_command(
+        device_id: str,
+        command_id: int,
+        actual_position: str = Query(min_length=1, max_length=40),
+        success: bool = Query(default=True),
+        detail: str = Query(default='', max_length=240),
+        device_token: str | None = Header(default=None, alias='X-Device-Token'),
+    ) -> str:
+        command = acknowledge_device_scoped_command(
+            device_id,
+            command_id,
+            actual_position=actual_position,
+            success=success,
+            detail=detail,
+            device_token=device_token,
+        )
+        return command['status']
+
+    @app.post(
+        '/api/artec/device/commands/{command_id}/ack',
+        response_class=PlainTextResponse,
+    )
+    def artec_ack_legacy_command(
+        command_id: int,
+        actual_position: str = Query(min_length=1, max_length=40),
+        success: bool = Query(default=True),
+        detail: str = Query(default='', max_length=240),
+    ) -> str:
+        command = acknowledge_device_command(
+            command_id,
+            actual_position=actual_position,
+            success=success,
+            detail=detail,
+        )
+        return command['status']
 
     return app
 

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 
-DEVICE_IDS = tuple(f'alat-{number}' for number in range(1, 7))
+DEVICE_IDS = tuple(f'core-{number}' for number in range(1, 7))
 COMMAND_TIMEOUT_SECONDS = 60
 
 
@@ -154,6 +154,53 @@ def initialize_database(database_path: Path) -> None:
         if 'estimated_count' not in component_columns:
             connection.execute('ALTER TABLE device_components ADD COLUMN estimated_count TEXT')
         connection.execute("UPDATE device_status SET name = device_id WHERE name = ''")
+        for number in range(1, 7):
+            old_device_id = f'alat-{number}'
+            new_device_id = f'core-{number}'
+            old_device = connection.execute(
+                'SELECT status, last_seen FROM device_status WHERE device_id = ?',
+                (old_device_id,),
+            ).fetchone()
+            if old_device is not None:
+                new_device = connection.execute(
+                    'SELECT last_seen FROM device_status WHERE device_id = ?',
+                    (new_device_id,),
+                ).fetchone()
+                if new_device is None:
+                    connection.execute(
+                        'UPDATE device_status SET device_id = ?, name = ? WHERE device_id = ?',
+                        (new_device_id, f'Core Unit {number}', old_device_id),
+                    )
+                else:
+                    if old_device['last_seen'] and (
+                        not new_device['last_seen'] or old_device['last_seen'] > new_device['last_seen']
+                    ):
+                        connection.execute(
+                            'UPDATE device_status SET status = ?, last_seen = ? WHERE device_id = ?',
+                            (old_device['status'], old_device['last_seen'], new_device_id),
+                        )
+                    connection.execute(
+                        'UPDATE device_status SET name = ? WHERE device_id = ?',
+                        (f'Core Unit {number}', new_device_id),
+                    )
+                    connection.execute(
+                        'DELETE FROM device_status WHERE device_id = ?',
+                        (old_device_id,),
+                    )
+            for table in (
+                'sensor_readings',
+                'device_components',
+                'component_condition_reports',
+                'actuator_commands',
+            ):
+                connection.execute(
+                    f'UPDATE {table} SET device_id = ? WHERE device_id = ?',
+                    (new_device_id, old_device_id),
+                )
+            connection.execute(
+                'UPDATE operation_events SET source = ? WHERE source = ?',
+                (new_device_id, old_device_id),
+            )
         now = datetime.now(timezone.utc).isoformat(timespec='seconds')
         connection.execute(
             'INSERT OR IGNORE INTO controller_state (singleton_id, updated_at) VALUES (1, ?)',
@@ -162,14 +209,14 @@ def initialize_database(database_path: Path) -> None:
         connection.executemany(
             'INSERT OR IGNORE INTO device_status (device_id, name, status) VALUES (?, ?, ?)',
             [
-                (device_id, f'Alat {number}', 'belum_terhubung')
+                (device_id, f'Core Unit {number}', 'belum_terhubung')
                 for number, device_id in enumerate(DEVICE_IDS, start=1)
             ],
         )
         for number, device_id in enumerate(DEVICE_IDS, start=1):
             connection.execute(
                 'UPDATE device_status SET name = ? WHERE device_id = ? AND name = ?',
-                (f'Alat {number}', device_id, device_id),
+                (f'Core Unit {number}', device_id, device_id),
             )
         connection.executemany(
             '''
@@ -200,6 +247,7 @@ def _device_status_with_freshness(record: dict, stale_after_seconds: int) -> dic
     age = max(0.0, (datetime.now(timezone.utc) - seen_at).total_seconds())
     return {
         **record,
+        'status': 'mati' if record['status'] == 'hidup' and age >= stale_after_seconds else record['status'],
         'connection_status': 'stale' if age >= stale_after_seconds else 'online',
         'age_seconds': int(age),
     }
@@ -213,13 +261,17 @@ def list_device_status(database_path: Path, stale_after_seconds: int = 30) -> li
     return [_device_status_with_freshness(dict(row), stale_after_seconds) for row in rows]
 
 
-def get_device_status(database_path: Path, device_id: str) -> dict | None:
+def get_device_status(
+    database_path: Path,
+    device_id: str,
+    stale_after_seconds: int = 30,
+) -> dict | None:
     with _connect(database_path) as connection:
         row = connection.execute(
             'SELECT device_id, name, status, last_seen FROM device_status WHERE device_id = ?',
             (device_id,),
         ).fetchone()
-    return dict(row) if row else None
+    return _device_status_with_freshness(dict(row), stale_after_seconds) if row else None
 
 
 def _decode_device_component(row: sqlite3.Row | dict) -> dict:
@@ -517,6 +569,23 @@ def list_sensor_readings(
                 (device_id, limit),
             ).fetchall()
     return [dict(row) for row in rows]
+
+
+def get_latest_sensor_reading(
+    database_path: Path,
+    device_id: str,
+    sensor_id: str,
+) -> dict | None:
+    with _connect(database_path) as connection:
+        row = connection.execute(
+            '''
+            SELECT * FROM sensor_readings
+            WHERE device_id = ? AND sensor_id = ?
+            ORDER BY id DESC LIMIT 1
+            ''',
+            (device_id, sensor_id),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def save_prediction(

@@ -35,6 +35,12 @@ class DeviceStatusUpdate(BaseModel):
     status: Literal['hidup', 'mati']
 
 
+class DeviceCoreStatusUpdate(BaseModel):
+    status: Literal['hidup', 'mati'] = Field(
+        description='Kondisi Core Unit: hidup atau mati.'
+    )
+
+
 class DeviceCreate(BaseModel):
     device_id: str = Field(min_length=1, max_length=40, pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
     name: str = Field(min_length=1, max_length=80)

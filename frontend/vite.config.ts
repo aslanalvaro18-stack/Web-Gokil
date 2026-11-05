@@ -5,10 +5,18 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [react()],
   server: {
-    allowedHosts: ['pradnyasiwi.web.id'],
+    allowedHosts: ['dashboard.pradnyasiwi.web.id'],
     host: '0.0.0.0',
     proxy: {
       '/api': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true,
+      },
+      '/docs': {
+        target: 'http://127.0.0.1:3000',
+        changeOrigin: true,
+      },
+      '/openapi.json': {
         target: 'http://127.0.0.1:3000',
         changeOrigin: true,
       },

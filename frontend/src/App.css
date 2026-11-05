@@ -299,6 +299,20 @@
 .compact-heading h2 { font-size: 15px; }
 .post-label { color: #a74b3c; background: #fff3ef; border-color: #eed9d2; }
 .get-label { color: #365f4d; background: #eff5ef; border-color: #dbe8dd; }
+.docs-link { display: inline-flex; align-items: center; gap: 4px; color: var(--green); font: 650 10px/1 var(--display); text-decoration: none; }
+.docs-link:hover { color: var(--tomato); }
+.api-docs-panel { margin-top: 12px; padding: 17px 19px; }
+.quick-endpoints { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; margin-top: 11px; }
+.endpoint-copy { width: 100%; min-width: 0; min-height: 46px; display: flex; align-items: center; gap: 10px; padding: 6px 0; border: 0; border-top: 1px solid var(--line); color: var(--ink); background: transparent; text-align: left; cursor: pointer; }
+.endpoint-copy:hover .endpoint-description strong { color: var(--green); }
+.endpoint-method { width: 38px; flex: 0 0 auto; padding: 5px 0; border-radius: 2px; font: 600 8px/1 var(--mono); text-align: center; }
+.endpoint-method.get { color: #365f4d; background: #eff5ef; }
+.endpoint-method.post { color: #a74b3c; background: #fff3ef; }
+.endpoint-description { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 3px; }
+.endpoint-description strong { font: 600 10px/1.2 var(--display); }
+.endpoint-description code { overflow: hidden; color: var(--muted); font: 9px/1.2 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.endpoint-action { display: grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; color: var(--muted); }
+.endpoint-copy:hover .endpoint-action { color: var(--green); }
 .telemetry-form { margin-top: 18px; }
 .telemetry-form label { display: block; margin-bottom: 7px; color: var(--muted); font-size: 10px; }
 .telemetry-form label span { color: #90978f; }
@@ -368,7 +382,8 @@
   .camera-device-row { grid-template-columns: 7px minmax(0, 1fr) auto; }
   .camera-device-row small { grid-column: 2 / -1; text-align: left; }
   .prediction-result { margin-top: 20px; }
-  .telemetry-panel, .history-panel { padding: 15px; }
+  .telemetry-panel, .history-panel, .api-docs-panel { padding: 15px; }
+  .quick-endpoints { grid-template-columns: 1fr; }
   .control-mode-row { align-items: stretch; flex-direction: column; }
   .mode-switch { align-self: flex-start; }
   .control-mode-row > .button { align-self: flex-start; }
