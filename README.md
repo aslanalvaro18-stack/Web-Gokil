@@ -50,8 +50,8 @@ Jika daftar kamera menunjukkan akses ditolak, pastikan pengguna Linux memiliki i
 | `POST` | `/api/devices/{device_id}/components/{component_id}/status?condition=normal` | Simpan kondisi komponen yang dilaporkan unit pemilik |
 | `GET` | `/api/component-condition-reports?component_id=...&limit=10` | Ambil riwayat kondisi komponen, terbaru lebih dahulu |
 | `POST` | `/api/devices/{device_id}/components/{component_id}/commands` | Antrekan command hanya untuk aktuator terkonfirmasi pada unit pemilik |
-| `GET` | `/api/devices/{device_id}/commands?device_token=...` | Ambil command milik unit; token dikirim sebagai parameter URL |
-| `POST` | `/api/devices/{device_id}/commands/{id}/ack?actual_position=closed&device_token=...` | ACK command milik unit; token dikirim sebagai parameter URL |
+| `GET` | `/api/devices/{device_id}/commands?X-Device-Token=...` | Ambil command milik unit; token dikirim sebagai parameter URL |
+| `POST` | `/api/devices/{device_id}/commands/{id}/ack?actual_position=closed&X-Device-Token=...` | ACK command milik unit; token dikirim sebagai parameter URL |
 | `POST` | `/api/predictions` | Kirim snapshot wajah ke model Keras di laptop; multipart field `image` |
 | `GET` | `/api/predictions` | Plain text kelas terakhir, misalnya `owner`; `unknown` jika belum dikenal/kedaluwarsa |
 | `GET` | `/api/predictions/latest` | Ambil prediksi terakhir |
@@ -135,7 +135,7 @@ Semua POST di bawah menerima parameter melalui URL dan tidak memerlukan body JSO
 | `POST` | `https://dev.pradnyasiwi.web.id/api/artec/events?event_type=catatan&value=mulai` | Catat event |
 | `POST` | `https://dev.pradnyasiwi.web.id/api/artec/emergency?mode=on` | Aktifkan/nonaktifkan emergency |
 
-Polling command dan ACK per-device menerima `device_token` sebagai parameter URL agar unit yang tidak mendukung header tetap dapat mengirimkannya. Token tetap diverifikasi terhadap `AGRO_DEVICE_TOKENS`; gunakan HTTPS, batasi API ke jaringan tepercaya, dan cegah query URL tercatat pada log karena URL bertoken dapat terekspos. Unggah prediksi foto tetap memerlukan multipart file `image`; API prediksi membalas access status berupa teks. Stream kamera dan unggah foto adalah pengecualian media, bukan body teks biasa. Endpoint API JSON lama tetap tersedia untuk dashboard.
+Polling command dan ACK per-device menerima `X-Device-Token` sebagai parameter URL agar unit yang tidak mendukung header tetap dapat mengirimkannya. Token tetap diverifikasi terhadap `AGRO_DEVICE_TOKENS`; gunakan HTTPS, batasi API ke jaringan tepercaya, dan cegah query URL tercatat pada log karena URL bertoken dapat terekspos. Unggah prediksi foto tetap memerlukan multipart file `image`; API prediksi membalas access status berupa teks. Stream kamera dan unggah foto adalah pengecualian media, bukan body teks biasa. Endpoint API JSON lama tetap tersedia untuk dashboard.
 
 Contoh alat mengirim status:
 
@@ -218,8 +218,8 @@ Command disimpan dengan pemilik unit dan komponen. Poller tidak dapat melihat co
 
 ```bash
 export AGRO_DEVICE_TOKENS='{"core-1":"TOKEN_ALAT_1","core-2":"TOKEN_ALAT_2"}'
-curl 'http://localhost:3000/api/devices/core-1/commands?device_token=TOKEN_ALAT_1'
-curl -X POST 'http://localhost:3000/api/devices/core-1/commands/12/ack?actual_position=stop&success=true&device_token=TOKEN_ALAT_1'
+curl 'http://localhost:3000/api/devices/core-1/commands?X-Device-Token=TOKEN_ALAT_1'
+curl -X POST 'http://localhost:3000/api/devices/core-1/commands/12/ack?actual_position=stop&success=true&X-Device-Token=TOKEN_ALAT_1'
 ```
 
 Token harus disetel secara lokal di backend dan unit/gateway; jangan menaruh nilai asli di repo atau membagikannya. Tanpa token untuk unit, polling/ACK per-unit dinonaktifkan. Program blok ArtecRobo yang ada di workspace belum tersedia untuk membuktikan dukungan parameter query bertoken; gateway dapat menjadi jembatan bila blok tersebut tidak dapat membuat URL dinamis. API saja tidak menjalankan motor: firmware/gateway tetap harus mem-poll command, menerapkannya, dan mengirim ACK.

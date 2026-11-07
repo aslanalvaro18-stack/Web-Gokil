@@ -11,6 +11,10 @@ from app.services.teachable_machine import TeachableMachineClassifier
 def test_openapi_docs_have_local_server_groups_and_request_examples(tmp_path: Path) -> None:
     app = create_app(tmp_path / 'docs.db', FakeClassifier(), camera_autostart=False)
     schema = app.openapi()
+    poll_parameters = schema['paths']['/api/devices/{device_id}/commands']['get']['parameters']
+    token_parameter = next(parameter for parameter in poll_parameters if parameter['name'] == 'X-Device-Token')
+    with TestClient(app) as client:
+        docs = client.get('/docs')
 
     assert schema['servers'][0]['url'] == '/'
     assert 'Mulai mencoba' in schema['info']['description']
@@ -20,6 +24,9 @@ def test_openapi_docs_have_local_server_groups_and_request_examples(tmp_path: Pa
         {'uptime_seconds': 7250, 'status': 'running'}
     ]
     assert schema['components']['schemas']['DeviceComponentCreate']['examples'][0]['confirmed'] is False
+    assert token_parameter['in'] == 'query'
+    assert docs.status_code == 200
+    assert 'copy-api-url' in docs.text
 
 
 class FakeClassifier:
@@ -530,20 +537,20 @@ def test_device_commands_are_authenticated_and_scoped_to_component_owner(
         )
         missing_token = client.get('/api/devices/core-1/commands')
         invalid_token = client.get(
-            '/api/devices/core-1/commands?device_token=wrong-token'
+            '/api/devices/core-1/commands?X-Device-Token=wrong-token'
         )
         owner_commands = client.get(
-            '/api/devices/core-1/commands?device_token=device-token-1',
+            '/api/devices/core-1/commands?X-Device-Token=device-token-1',
         )
         artec_owner_commands = client.get(
-            '/api/artec/devices/core-1/commands?device_token=device-token-1',
+            '/api/artec/devices/core-1/commands?X-Device-Token=device-token-1',
         )
         legacy_commands = client.get('/api/device/commands')
         other_commands = client.get(
-            '/api/devices/core-2/commands?device_token=device-token-2',
+            '/api/devices/core-2/commands?X-Device-Token=device-token-2',
         )
         wrong_owner_ack = client.post(
-            f"/api/devices/core-2/commands/{command.json()['id']}/ack?device_token=device-token-2",
+            f"/api/devices/core-2/commands/{command.json()['id']}/ack?X-Device-Token=device-token-2",
             json={'actual_position': 'forward'},
         )
         legacy_ack = client.post(
@@ -551,7 +558,7 @@ def test_device_commands_are_authenticated_and_scoped_to_component_owner(
             json={'actual_position': 'forward'},
         )
         acknowledged = client.post(
-            f"/api/devices/core-1/commands/{command.json()['id']}/ack?device_token=device-token-1",
+            f"/api/devices/core-1/commands/{command.json()['id']}/ack?X-Device-Token=device-token-1",
             json={'actual_position': 'forward'},
         )
         artec_command = client.post(
@@ -560,7 +567,7 @@ def test_device_commands_are_authenticated_and_scoped_to_component_owner(
         )
         artec_acknowledged = client.post(
             f"/api/artec/devices/core-1/commands/{artec_command.json()['id']}/ack"
-            '?actual_position=reverse&device_token=device-token-1',
+            '?actual_position=reverse&X-Device-Token=device-token-1',
         )
         openapi = client.get('/openapi.json').json()
         components = client.get('/api/components?device_id=core-1').json()
@@ -580,8 +587,7 @@ def test_device_commands_are_authenticated_and_scoped_to_component_owner(
     assert artec_acknowledged.status_code == 200
     assert components[0]['current_value'] == 'reverse'
     poll_parameters = openapi['paths']['/api/devices/{device_id}/commands']['get']['parameters']
-    assert any(parameter['name'] == 'device_token' and parameter['in'] == 'query' for parameter in poll_parameters)
-    assert all(parameter['name'] != 'X-Device-Token' for parameter in poll_parameters)
+    assert any(parameter['name'] == 'X-Device-Token' and parameter['in'] == 'query' for parameter in poll_parameters)
 
 
 def test_unconfirmed_component_cannot_be_controlled(tmp_path: Path) -> None:
@@ -640,7 +646,7 @@ def test_emergency_replaces_pending_component_command_with_safe_value(
         )
         emergency = client.post('/api/emergency', json={'enabled': True})
         commands = client.get(
-            '/api/devices/core-1/commands?device_token=device-token-1',
+            '/api/devices/core-1/commands?X-Device-Token=device-token-1',
         ).json()
         blocked = client.post(
             '/api/devices/core-1/components/elevator-motor-1/commands',

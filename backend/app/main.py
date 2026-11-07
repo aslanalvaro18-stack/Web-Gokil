@@ -12,8 +12,9 @@ from typing import Callable, Literal, Protocol
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 
 from app import database
 from app.schemas import (
@@ -105,8 +106,81 @@ Lalu cek datanya lewat `GET /api/readings?device_id=core-1`.
 
 - ID alat dan komponen harus unik. Endpoint registrasi mengembalikan `409` jika ID sudah dipakai.
 - Komponen baru sebaiknya dimulai dengan `confirmed: false`, `enabled: false`, dan `device_id: null`. Verifikasi wiring dan unit pemilik sebelum mengaktifkannya.
-- Polling dan ACK per-unit memerlukan `device_token` pada query URL jika token unit dikonfigurasi. Gunakan HTTPS dan jangan expose URL bertoken di log atau layanan publik.
+- Polling dan ACK per-unit menerima `X-Device-Token` sebagai parameter query URL jika token unit dikonfigurasi, misalnya `?X-Device-Token=TOKEN_ALAT_1`. Gunakan HTTPS dan jangan expose URL bertoken di log atau layanan publik.
 - Endpoint `/api/artec/...` menggunakan parameter URL dan umumnya membalas teks, sedangkan endpoint `/api/...` utama menggunakan JSON.
+'''
+
+DOCS_COPY_URL_SCRIPT = r'''
+<style>
+.copy-api-url { flex: 0 0 auto; margin: 0 8px; padding: 5px 8px; border: 1px solid #89a092; border-radius: 3px; color: #234b39; background: #f5f8f5; font: 600 12px/1.2 sans-serif; cursor: pointer; }
+.copy-api-url:hover { color: #fff; background: #315d46; }
+</style>
+<script>
+(() => {
+    const copyOperationUrl = async (operation, button) => {
+        const pathElement = operation.querySelector('.opblock-summary-path[data-path]');
+        let path = pathElement?.getAttribute('data-path');
+        if (!path) return;
+
+        const pathPlaceholders = [];
+        path = path.replace(/\{([^}]+)\}/g, (placeholder, parameterName) => {
+            const row = Array.from(operation.querySelectorAll('tr[data-param-in="path"]'))
+                .find((item) => item.getAttribute('data-param-name') === parameterName);
+            const value = row?.querySelector('input, select, textarea')?.value?.trim();
+            if (value) return encodeURIComponent(value);
+            const marker = `__OPENAPI_PATH_${parameterName}__`;
+            pathPlaceholders.push([marker, placeholder]);
+            return marker;
+        });
+
+        const selectedServer = document.querySelector('#servers')?.value || '/';
+        const url = new URL(path, new URL(selectedServer, window.location.href));
+        operation.querySelectorAll('tr[data-param-in="query"]').forEach((row) => {
+            const parameterName = row.getAttribute('data-param-name');
+            const value = row.querySelector('input, select, textarea')?.value?.trim();
+            if (parameterName && value) url.searchParams.set(parameterName, value);
+        });
+
+        let copiedUrl = url.href;
+        pathPlaceholders.forEach(([marker, placeholder]) => {
+            copiedUrl = copiedUrl.replace(marker, placeholder);
+        });
+
+        try {
+            await navigator.clipboard.writeText(copiedUrl);
+            button.textContent = 'Tersalin';
+        } catch {
+            button.textContent = 'Gagal menyalin';
+        }
+        window.setTimeout(() => {
+            if (button.isConnected) button.textContent = 'Salin URL';
+        }, 1600);
+    };
+
+    const addCopyButtons = () => {
+        document.querySelectorAll('.opblock').forEach((operation) => {
+            const summary = operation.querySelector('.opblock-summary');
+            if (!summary || summary.querySelector('.copy-api-url')) return;
+
+            const button = document.createElement('button');
+            button.className = 'copy-api-url';
+            button.type = 'button';
+            button.textContent = 'Salin URL';
+            button.title = 'Salin URL endpoint dengan server dan parameter yang dipilih';
+            button.addEventListener('click', (event) => {
+                event.stopPropagation();
+                void copyOperationUrl(operation, button);
+            });
+
+            const arrow = summary.querySelector('.opblock-control-arrow');
+            summary.insertBefore(button, arrow);
+        });
+    };
+
+    new MutationObserver(addCopyButtons).observe(document.body, { childList: true, subtree: true });
+    addCopyButtons();
+})();
+</script>
 '''
 
 
@@ -225,6 +299,7 @@ def create_app(
         title='AGRO-SEMBADA API',
         description=DOCS_DESCRIPTION,
         version='1.0.0',
+        docs_url=None,
         openapi_tags=DOCS_TAGS,
         lifespan=lifespan,
         servers=[
@@ -234,6 +309,19 @@ def create_app(
             {'url': 'http://localhost:5173', 'description': 'Local frontend'},
         ],
     )
+
+    @app.get('/docs', include_in_schema=False)
+    def swagger_documentation() -> HTMLResponse:
+        page = get_swagger_ui_html(
+            openapi_url=app.openapi_url or '/openapi.json',
+            title=f'{app.title} - Swagger UI',
+            swagger_ui_parameters={'deepLinking': True},
+        )
+        html = page.body.decode('utf-8').replace(
+            '</body>', f'{DOCS_COPY_URL_SCRIPT}</body>'
+        )
+        return HTMLResponse(html)
+
     app.state.database_path = resolved_database_path
     app.state.predictor = predictor or TeachableMachineClassifier(model_path, labels_path)
     app.state.weather_provider = weather_provider or get_pakem_weather
@@ -494,6 +582,7 @@ def create_app(
         limit: int = Query(default=20, ge=1, le=100),
         device_token: str | None = Query(
             default=None,
+            alias='X-Device-Token',
             min_length=1,
             description='Token khusus unit; kirim melalui parameter URL.',
         ),
@@ -1110,6 +1199,7 @@ def create_app(
         limit: int = Query(default=20, ge=1, le=100),
         device_token: str | None = Query(
             default=None,
+            alias='X-Device-Token',
             min_length=1,
             description='Token khusus unit. Kirim lewat query URL; wajib jika AGRO_DEVICE_TOKENS dikonfigurasi.',
         ),
@@ -1129,6 +1219,7 @@ def create_app(
         detail: str = Query(default='', max_length=240),
         device_token: str | None = Query(
             default=None,
+            alias='X-Device-Token',
             min_length=1,
             description='Token khusus unit. Kirim lewat query URL; wajib jika AGRO_DEVICE_TOKENS dikonfigurasi.',
         ),
@@ -1476,6 +1567,7 @@ def create_app(
         detail: str = Query(default='', max_length=240),
         device_token: str | None = Query(
             default=None,
+            alias='X-Device-Token',
             min_length=1,
             description='Token khusus unit; kirim melalui parameter URL.',
         ),
