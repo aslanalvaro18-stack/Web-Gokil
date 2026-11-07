@@ -48,6 +48,12 @@ type SensorReading = {
   recorded_at: string
 }
 
+type ScratchVariable = {
+  name: string
+  value: string | number | boolean | null
+  updated_at: string
+}
+
 type DeviceComponent = {
   component_id: string
   name: string
@@ -269,6 +275,7 @@ function App() {
   const [components, setComponents] = useState<DeviceComponent[]>([])
   const [componentHistory, setComponentHistory] = useState<Record<string, ComponentConditionHistory>>({})
   const [sensorReadings, setSensorReadings] = useState<SensorReading[]>([])
+  const [scratchVariables, setScratchVariables] = useState<ScratchVariable[]>([])
   const [cameraStatus, setCameraStatus] = useState(emptyCameraStatus)
   const [apiOnline, setApiOnline] = useState(false)
   const [copiedEndpoint, setCopiedEndpoint] = useState('')
@@ -278,6 +285,12 @@ function App() {
   const [weather, setWeather] = useState<Weather | null>(null)
   const [weatherLoading, setWeatherLoading] = useState(true)
   const [dryingTargetMinutes, setDryingTargetMinutes] = useState('60')
+  const [variableNameInput, setVariableNameInput] = useState('')
+  const [variableValueInput, setVariableValueInput] = useState('')
+  const [variableValueType, setVariableValueType] = useState<'text' | 'number' | 'boolean' | 'null'>('text')
+  const [editingVariableName, setEditingVariableName] = useState<string | null>(null)
+  const [variableBusy, setVariableBusy] = useState(false)
+  const [variableNotice, setVariableNotice] = useState('')
   const [deviceIdInput, setDeviceIdInput] = useState('')
   const [deviceNameInput, setDeviceNameInput] = useState('')
   const [deviceBusy, setDeviceBusy] = useState(false)
@@ -321,26 +334,29 @@ function App() {
 
     const refresh = async () => {
       try {
-        const [dashboardResponse, devicesResponse, readingsResponse, componentsResponse] = await Promise.all([
+        const [dashboardResponse, devicesResponse, readingsResponse, componentsResponse, variablesResponse] = await Promise.all([
           fetch('/api/dashboard'),
           fetch('/api/devices'),
           fetch('/api/readings?limit=100'),
           fetch('/api/components'),
+          fetch('/api/variables'),
         ])
-        if (!dashboardResponse.ok || !devicesResponse.ok || !readingsResponse.ok || !componentsResponse.ok) {
+        if (!dashboardResponse.ok || !devicesResponse.ok || !readingsResponse.ok || !componentsResponse.ok || !variablesResponse.ok) {
           throw new Error('Backend tidak merespons')
         }
-        const [data, deviceData, readingData, componentData] = await Promise.all([
+        const [data, deviceData, readingData, componentData, variableData] = await Promise.all([
           dashboardResponse.json() as Promise<DashboardData>,
           devicesResponse.json() as Promise<Device[]>,
           readingsResponse.json() as Promise<SensorReading[]>,
           componentsResponse.json() as Promise<DeviceComponent[]>,
+          variablesResponse.json() as Promise<ScratchVariable[]>,
         ])
         if (active) {
           setDashboard(data)
           setDevices(deviceData)
           setSensorReadings(readingData)
           setComponents(componentData)
+          setScratchVariables(variableData)
           setApiOnline(true)
         }
       } catch {
@@ -522,6 +538,64 @@ function App() {
       setNotice(error instanceof Error ? error.message : 'Tidak dapat menyimpan uptime.')
     } finally {
       setBusy(false)
+    }
+  }
+
+  const editScratchVariable = (variable: ScratchVariable) => {
+    setEditingVariableName(variable.name)
+    setVariableNameInput(variable.name)
+    setVariableValueInput(variable.value === null ? '' : String(variable.value))
+    setVariableValueType(
+      variable.value === null ? 'null' : typeof variable.value === 'boolean' ? 'boolean' : typeof variable.value === 'number' ? 'number' : 'text',
+    )
+    setVariableNotice('')
+  }
+
+  const cancelScratchVariableEdit = () => {
+    setEditingVariableName(null)
+    setVariableNameInput('')
+    setVariableValueInput('')
+    setVariableValueType('text')
+    setVariableNotice('')
+  }
+
+  const saveScratchVariable = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const name = variableNameInput.trim()
+    let value: ScratchVariable['value']
+
+    if (variableValueType === 'null') {
+      value = null
+    } else if (variableValueType === 'boolean') {
+      value = variableValueInput === 'true'
+    } else if (variableValueType === 'number') {
+      value = Number(variableValueInput)
+      if (!variableValueInput.trim() || !Number.isFinite(value)) {
+        setVariableNotice('Nilai angka tidak valid.')
+        return
+      }
+    } else {
+      value = variableValueInput
+    }
+
+    setVariableBusy(true)
+    setVariableNotice('Menyimpan variabel...')
+    try {
+      const response = await fetch(`/api/variables/${encodeURIComponent(name)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value }),
+      })
+      const body = (await response.json()) as ScratchVariable & { detail?: string }
+      if (!response.ok) throw new Error(body.detail ?? 'Variabel gagal disimpan.')
+      setScratchVariables((current) => [...current.filter((item) => item.name !== body.name), body]
+        .sort((first, second) => first.name.localeCompare(second.name)))
+      setEditingVariableName(null)
+      setVariableNotice(`Variabel ${body.name} berhasil disimpan.`)
+    } catch (error) {
+      setVariableNotice(error instanceof Error ? error.message : 'Tidak dapat menyimpan variabel.')
+    } finally {
+      setVariableBusy(false)
     }
   }
 
@@ -1322,10 +1396,97 @@ function App() {
         </article>
       </section>
 
+      <section className="panel variables-panel" aria-labelledby="variables-title">
+        <div className="panel-heading compact-heading">
+          <div>
+            <p className="section-index">05 / SCRATCH</p>
+            <h2 id="variables-title">Variabel tersimpan</h2>
+          </div>
+          <span className="sensor-reading-count">{scratchVariables.length} VARIABEL</span>
+        </div>
+        <div className="variable-manager-layout">
+          <div className="scratch-variable-list" aria-live="polite">
+            {scratchVariables.length === 0 ? (
+              <p className="empty-readings">Belum ada variabel. Buat variabel pertama di samping.</p>
+            ) : scratchVariables.map((variable) => (
+              <div className="scratch-variable-row" key={variable.name}>
+                <div className="scratch-variable-identity">
+                  <strong>{variable.name}</strong>
+                  <span>{variable.value === null ? 'KOSONG' : typeof variable.value} · {formatTimestamp(variable.updated_at)}</span>
+                </div>
+                <code>{variable.value === null ? 'null' : String(variable.value)}</code>
+                <button
+                  className="component-edit"
+                  type="button"
+                  onClick={() => editScratchVariable(variable)}
+                  title={`Ubah ${variable.name}`}
+                  aria-label={`Ubah variabel ${variable.name}`}
+                ><Pencil size={13} /></button>
+              </div>
+            ))}
+          </div>
+          <form className="scratch-variable-form" onSubmit={(event) => void saveScratchVariable(event)}>
+            <strong>{editingVariableName ? `Ubah ${editingVariableName}` : 'Buat variabel'}</strong>
+            <label htmlFor="scratch-variable-name">Nama variabel</label>
+            <input
+              id="scratch-variable-name"
+              value={variableNameInput}
+              onChange={(event) => setVariableNameInput(event.target.value)}
+              maxLength={80}
+              required
+              disabled={editingVariableName !== null}
+              placeholder="jumlah_panen"
+            />
+            <label htmlFor="scratch-variable-type">Tipe nilai</label>
+            <select
+              id="scratch-variable-type"
+              value={variableValueType}
+              onChange={(event) => {
+                const nextType = event.target.value as typeof variableValueType
+                setVariableValueType(nextType)
+                if (nextType === 'boolean') setVariableValueInput('true')
+                if (nextType === 'null') setVariableValueInput('')
+              }}
+            >
+              <option value="text">Teks</option>
+              <option value="number">Angka</option>
+              <option value="boolean">Boolean</option>
+              <option value="null">Kosong (null)</option>
+            </select>
+            <label htmlFor="scratch-variable-value">Nilai</label>
+            {variableValueType === 'boolean' ? (
+              <select id="scratch-variable-value" value={variableValueInput} onChange={(event) => setVariableValueInput(event.target.value)}>
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            ) : (
+              <input
+                id="scratch-variable-value"
+                type={variableValueType === 'number' ? 'number' : 'text'}
+                step={variableValueType === 'number' ? 'any' : undefined}
+                value={variableValueInput}
+                onChange={(event) => setVariableValueInput(event.target.value)}
+                maxLength={500}
+                required={variableValueType !== 'null'}
+                disabled={variableValueType === 'null'}
+                placeholder={variableValueType === 'null' ? 'null' : variableValueType === 'number' ? '42' : 'Sedang dijemur'}
+              />
+            )}
+            <div className="scratch-variable-actions">
+              <button className="button button-primary" type="submit" disabled={variableBusy || !apiOnline}>
+                <Check size={14} /> Simpan variabel
+              </button>
+              {editingVariableName && <button className="button button-secondary" type="button" onClick={cancelScratchVariableEdit}>Batal</button>}
+            </div>
+            {variableNotice && <p className="device-notice" role="status">{variableNotice}</p>}
+          </form>
+        </div>
+      </section>
+
       <section className="api-docs-panel panel" aria-labelledby="api-docs-title">
         <div className="panel-heading compact-heading">
           <div>
-            <p className="section-index">05 / REFERENSI API</p>
+            <p className="section-index">06 / REFERENSI API</p>
             <h2 id="api-docs-title">Endpoint siap disalin</h2>
           </div>
           <a className="docs-link" href="/docs" target="_blank" rel="noreferrer">

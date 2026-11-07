@@ -184,6 +184,20 @@
 .component-confirm-label input { accent-color: var(--green); }
 .component-form-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 .bottom-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.85fr); gap: 12px; margin-top: 12px; }
+.variables-panel { margin-top: 12px; padding: 17px 19px; }
+.variable-manager-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.85fr); gap: 18px; margin-top: 13px; }
+.scratch-variable-list { display: grid; align-content: start; min-width: 0; }
+.scratch-variable-row { display: grid; grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1fr) 30px; align-items: center; gap: 10px; min-height: 48px; padding: 6px 0; border-top: 1px solid var(--line); }
+.scratch-variable-identity { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.scratch-variable-identity strong { overflow: hidden; color: var(--ink); font: 650 10px/1.2 var(--display); text-overflow: ellipsis; white-space: nowrap; }
+.scratch-variable-identity span { color: var(--muted); font: 8px/1.2 var(--mono); }
+.scratch-variable-row code { overflow-wrap: anywhere; color: var(--green); font: 10px/1.35 var(--mono); }
+.scratch-variable-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-content: start; align-items: center; gap: 7px 10px; padding-left: 16px; border-left: 1px solid var(--line); }
+.scratch-variable-form > strong, .scratch-variable-actions, .scratch-variable-form > .device-notice { grid-column: 1 / -1; }
+.scratch-variable-form > strong { color: var(--ink); font: 650 11px/1.2 var(--display); }
+.scratch-variable-form > label { color: var(--muted); font-size: 9px; }
+.scratch-variable-form > input, .scratch-variable-form > select { width: 100%; min-width: 0; height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: 3px; color: var(--ink); background: var(--paper); font: 9px var(--mono); }
+.scratch-variable-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 3px; }
 .control-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.85fr); gap: 12px; margin-top: 12px; }
 .panel { border: 1px solid var(--line); background: var(--paper); min-width: 0; }
 .camera-panel, .prediction-panel { min-height: 366px; padding: 19px; }
@@ -355,6 +369,8 @@
   .metric strong { margin: 11px 0 5px; font-size: 22px; }
   .metric .status-value { font-size: 19px; }
   .workspace-grid, .bottom-grid { grid-template-columns: 1fr; gap: 9px; margin-top: 9px; }
+  .variable-manager-layout { grid-template-columns: 1fr; gap: 13px; }
+  .scratch-variable-form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 13px 0 0; border-top: 1px solid var(--line); border-left: 0; }
   .weather-panel { grid-template-columns: 1fr; margin-top: 9px; }
   .weather-hero { min-height: 195px; grid-template-columns: 94px minmax(0, 1fr); gap: 17px; padding: 20px 17px; }
   .weather-visual { width: 90px; }
