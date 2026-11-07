@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Literal, Protocol
 
-from fastapi import FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import PlainTextResponse, StreamingResponse
@@ -105,7 +105,7 @@ Lalu cek datanya lewat `GET /api/readings?device_id=core-1`.
 
 - ID alat dan komponen harus unik. Endpoint registrasi mengembalikan `409` jika ID sudah dipakai.
 - Komponen baru sebaiknya dimulai dengan `confirmed: false`, `enabled: false`, dan `device_id: null`. Verifikasi wiring dan unit pemilik sebelum mengaktifkannya.
-- Command unit memerlukan header `X-Device-Token`; token dikonfigurasi di backend dan jangan diletakkan di URL.
+- Polling dan ACK per-unit memerlukan `device_token` pada query URL jika token unit dikonfigurasi. Gunakan HTTPS dan jangan expose URL bertoken di log atau layanan publik.
 - Endpoint `/api/artec/...` menggunakan parameter URL dan umumnya membalas teks, sedangkan endpoint `/api/...` utama menggunakan JSON.
 '''
 
@@ -484,6 +484,22 @@ def create_app(
             device_stale_seconds,
         )
         return str(device['age_seconds']) if device and device['age_seconds'] is not None else 'tidak_ada'
+
+    @app.get(
+        '/api/artec/devices/{device_id}/commands',
+        response_class=PlainTextResponse,
+    )
+    def artec_device_commands(
+        device_id: str,
+        limit: int = Query(default=20, ge=1, le=100),
+        device_token: str | None = Query(
+            default=None,
+            min_length=1,
+            description='Token khusus unit; kirim melalui parameter URL.',
+        ),
+    ) -> str:
+        commands = read_commands_for_device(device_id, limit, device_token)
+        return format_text_rows(commands, ('id', 'actuator', 'position', 'component_id'))
 
     @app.get(
         '/api/artec/devices/{device_id}/{field}',
@@ -1092,7 +1108,11 @@ def create_app(
     def read_commands_for_device(
         device_id: str,
         limit: int = Query(default=20, ge=1, le=100),
-        device_token: str | None = Header(default=None, alias='X-Device-Token'),
+        device_token: str | None = Query(
+            default=None,
+            min_length=1,
+            description='Token khusus unit. Kirim lewat query URL; wajib jika AGRO_DEVICE_TOKENS dikonfigurasi.',
+        ),
     ) -> list[dict]:
         authorize_device(device_id, device_token)
         if database.get_device_status(app.state.database_path, device_id) is None:
@@ -1107,7 +1127,11 @@ def create_app(
         actual_position: str | None = Query(default=None, min_length=1, max_length=40),
         success: bool = Query(default=True),
         detail: str = Query(default='', max_length=240),
-        device_token: str | None = Header(default=None, alias='X-Device-Token'),
+        device_token: str | None = Query(
+            default=None,
+            min_length=1,
+            description='Token khusus unit. Kirim lewat query URL; wajib jika AGRO_DEVICE_TOKENS dikonfigurasi.',
+        ),
     ) -> dict:
         authorize_device(device_id, device_token)
         if payload is None and actual_position is None:
@@ -1440,18 +1464,6 @@ def create_app(
         command = command_device_component(device_id, component_id, position=position)
         return str(command['id'])
 
-    @app.get(
-        '/api/artec/devices/{device_id}/commands',
-        response_class=PlainTextResponse,
-    )
-    def artec_device_commands(
-        device_id: str,
-        limit: int = Query(default=20, ge=1, le=100),
-        device_token: str | None = Header(default=None, alias='X-Device-Token'),
-    ) -> str:
-        commands = read_commands_for_device(device_id, limit, device_token)
-        return format_text_rows(commands, ('id', 'actuator', 'position', 'component_id'))
-
     @app.post(
         '/api/artec/devices/{device_id}/commands/{command_id}/ack',
         response_class=PlainTextResponse,
@@ -1462,7 +1474,11 @@ def create_app(
         actual_position: str = Query(min_length=1, max_length=40),
         success: bool = Query(default=True),
         detail: str = Query(default='', max_length=240),
-        device_token: str | None = Header(default=None, alias='X-Device-Token'),
+        device_token: str | None = Query(
+            default=None,
+            min_length=1,
+            description='Token khusus unit; kirim melalui parameter URL.',
+        ),
     ) -> str:
         command = acknowledge_device_scoped_command(
             device_id,
