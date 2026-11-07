@@ -206,6 +206,35 @@ def test_sensor_readings_accept_json_and_url_parameters(tmp_path: Path) -> None:
     assert unknown_device.status_code == 404
 
 
+def test_scratch_variables_round_trip_json_and_artec_text(tmp_path: Path) -> None:
+    app = create_app(tmp_path / 'test.db', FakeClassifier())
+    with TestClient(app) as client:
+        number_written = client.post('/api/variables/jumlah_panen', json={'value': 42})
+        number_read = client.get('/api/variables/jumlah_panen')
+        text_written = client.post(
+            '/api/artec/variables/status_jemur?value=sedang%20dijemur'
+        )
+        text_read = client.get('/api/artec/variables/status_jemur')
+        typed_written = client.post('/api/artec/variables/siap?value=true')
+        typed_read = client.get('/api/variables/siap')
+        all_variables = client.get('/api/variables')
+        text_variables = client.get('/api/artec/variables')
+        missing_variable = client.get('/api/artec/variables/belum_ada')
+
+    assert number_written.status_code == 200
+    assert number_read.json()['value'] == 42
+    assert isinstance(number_read.json()['value'], int)
+    assert text_written.text == 'tersimpan'
+    assert text_read.text == 'sedang dijemur'
+    assert typed_written.text == 'tersimpan'
+    assert typed_read.json()['value'] is True
+    assert {item['name'] for item in all_variables.json()} == {
+        'jumlah_panen', 'siap', 'status_jemur'
+    }
+    assert 'status_jemur|sedang dijemur|' in text_variables.text
+    assert missing_variable.text == 'tidak_ada'
+
+
 def test_component_condition_reports_keep_history_and_enforce_owner(tmp_path: Path) -> None:
     app = create_app(tmp_path / 'test.db', FakeClassifier())
     with TestClient(app) as client:

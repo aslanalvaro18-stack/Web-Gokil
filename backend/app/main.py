@@ -68,7 +68,7 @@ DOCS_TAGS = [
     },
     {
         'name': 'Events & variables',
-        'description': 'Catat event dengan nama bebas dan simpan variabel Scratch bernama untuk dibaca kembali.',
+        'description': 'Catat event dengan nama bebas, simpan variabel Scratch bernama, lalu baca kembali nilainya.',
     },
     {
         'name': 'Komponen & commands',
@@ -1584,6 +1584,27 @@ def create_app(
         )
         return 'tersimpan'
 
+    @app.get('/api/artec/variables', response_class=PlainTextResponse)
+    def artec_scratch_variables() -> str:
+        variables = database.list_scratch_variables(app.state.database_path)
+        return format_text_rows(variables, ('name', 'value', 'updated_at'))
+
+    @app.get('/api/artec/variables/{name}', response_class=PlainTextResponse)
+    def artec_read_scratch_variable(name: str) -> str:
+        variable = database.get_scratch_variable(app.state.database_path, name)
+        if variable is None:
+            return 'tidak_ada'
+        value = variable['value']
+        return value if isinstance(value, str) else json.dumps(value, ensure_ascii=True)
+
+    @app.post('/api/artec/variables/{name}', response_class=PlainTextResponse)
+    def artec_write_scratch_variable(
+        name: str,
+        value: str = Query(),
+    ) -> str:
+        write_scratch_variable(name, value=value)
+        return 'tersimpan'
+
     @app.get('/api/artec/emergency', response_class=PlainTextResponse)
     def artec_get_emergency() -> str:
         return read_emergency_status()
@@ -1672,6 +1693,8 @@ def create_app(
                 tag = 'ArtecRobo (teks)'
             elif path.startswith('/api/camera/') or path == '/api/health':
                 tag = 'Sistem & kamera'
+            elif path.startswith('/api/events') or path.startswith('/api/variables'):
+                tag = 'Events & variables'
             elif (
                 path.startswith('/api/components')
                 or path.startswith('/api/component-condition-reports')

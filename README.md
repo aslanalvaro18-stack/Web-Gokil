@@ -64,7 +64,10 @@ Jika daftar kamera menunjukkan akses ditolak, pastikan pengguna Linux memiliki i
 | `POST` | `/api/drying/start?target_seconds=3600` | Mulai sesi jemur tanpa JSON body |
 | `POST` | `/api/drying/stop` | Akhiri sesi dan catat durasi |
 | `GET` | `/api/events?limit=50` | Ambil riwayat operasi |
-| `POST` | `/api/events?event_type=...` | Catat event tambahan dari alat |
+| `POST` | `/api/events` | Catat event dengan `event_type` bebas melalui JSON atau query |
+| `GET` | `/api/variables` | Daftar variabel Scratch yang tersimpan |
+| `GET` | `/api/variables/{name}` | Baca nilai variabel Scratch |
+| `POST` | `/api/variables/{name}` | Buat/perbarui variabel dengan JSON `{"value":...}` atau query `?value=...` |
 | `GET` | `/api/emergency` | Plain text status: `on` atau `off` |
 | `GET` | `/api/emergency?mode=on` | Aktifkan emergency dan antrekan posisi aman |
 | `POST` | `/api/emergency?mode=off` | Nonaktifkan emergency tanpa JSON body |
@@ -107,6 +110,8 @@ Gunakan endpoint `/api/artec/` bila blok ArtecRobo lebih mudah mengolah teks dar
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/control/emergency_mode` | `true` atau `false` |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/control/actuators/roof/target_position` | Target aktuator |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/events?limit=10` | Baris `jenis|sumber|nilai|waktu` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/variables` | Baris `nama|nilai|updated_at` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/variables/jumlah_panen` | Nilai variabel dalam teks; `tidak_ada` jika belum dibuat |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/emergency` | `on` atau `off` |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/commands` | Baris `id|aktuator|posisi` atau `kosong` |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/camera/status` | State kamera |
@@ -133,9 +138,23 @@ Semua POST di bawah menerima parameter melalui URL dan tidak memerlukan body JSO
 | `POST` | `https://dev.pradnyasiwi.web.id/api/artec/drying/start?target_seconds=3600` | Mulai jemur |
 | `POST` | `https://dev.pradnyasiwi.web.id/api/artec/drying/stop` | Hentikan jemur |
 | `POST` | `https://dev.pradnyasiwi.web.id/api/artec/events?event_type=catatan&value=mulai` | Catat event |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/variables/jumlah_panen?value=42` | Buat/perbarui variabel; balasan `tersimpan` |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/variables/status_jemur?value=sedang%20dijemur` | Simpan teks ke variabel |
 | `POST` | `https://dev.pradnyasiwi.web.id/api/artec/emergency?mode=on` | Aktifkan/nonaktifkan emergency |
 
 Polling command dan ACK per-device menerima `X-Device-Token` sebagai parameter URL agar unit yang tidak mendukung header tetap dapat mengirimkannya. Token tetap diverifikasi terhadap `AGRO_DEVICE_TOKENS`; gunakan HTTPS, batasi API ke jaringan tepercaya, dan cegah query URL tercatat pada log karena URL bertoken dapat terekspos. Unggah prediksi foto tetap memerlukan multipart file `image`; API prediksi membalas access status berupa teks. Stream kamera dan unggah foto adalah pengecualian media, bukan body teks biasa. Endpoint API JSON lama tetap tersedia untuk dashboard.
+
+Event khusus dapat memakai `event_type` buatan sendiri, misalnya `panen_dimulai`, dan dibaca kembali melalui `GET /api/events` atau `/api/artec/events`. Variabel Scratch disimpan berdasarkan nama; POST berikut membuat atau memperbarui nilai yang sama, lalu GET mengembalikan nilai terakhir:
+
+```bash
+curl -X POST 'http://localhost:3000/api/artec/events?event_type=panen_dimulai&value=blok_1'
+curl 'http://localhost:3000/api/artec/events?limit=10'
+curl -X POST 'http://localhost:3000/api/artec/variables/jumlah_panen?value=42'
+curl 'http://localhost:3000/api/artec/variables/jumlah_panen'
+curl 'http://localhost:3000/api/artec/variables'
+```
+
+Nilai query yang valid sebagai JSON scalar (`42`, `true`, `null`, atau string JSON berpetik) disimpan sebagai angka/boolean/null/string; teks biasa disimpan sebagai string. Endpoint JSON `/api/variables/{name}` juga menerima tipe nilai di body.
 
 Contoh alat mengirim status:
 
