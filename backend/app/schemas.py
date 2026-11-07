@@ -65,6 +65,19 @@ class SensorReadingRecord(SensorReadingCreate):
     recorded_at: str
 
 
+class ScratchVariableCreate(BaseModel):
+    model_config = ConfigDict(json_schema_extra={
+        'examples': [{'value': 42}],
+    })
+
+    value: str | int | float | bool | None
+
+
+class ScratchVariableRecord(ScratchVariableCreate):
+    name: str
+    updated_at: str
+
+
 class DeviceStatusUpdate(BaseModel):
     model_config = ConfigDict(json_schema_extra={
         'examples': [{'device_id': 'core-1', 'status': 'hidup'}],

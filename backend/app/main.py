@@ -39,6 +39,8 @@ from app.schemas import (
     PredictionRecord,
     SensorReadingCreate,
     SensorReadingRecord,
+    ScratchVariableCreate,
+    ScratchVariableRecord,
     TelemetryCreate,
     TelemetryRecord,
 )
@@ -63,6 +65,10 @@ DOCS_TAGS = [
     {
         'name': 'Devices & telemetri',
         'description': 'Enam Core Unit awal memakai ID `core-1` sampai `core-6`. Kirim heartbeat dan pembacaan sensor ke ID yang sudah terdaftar.',
+    },
+    {
+        'name': 'Events & variables',
+        'description': 'Catat event dengan nama bebas dan simpan variabel Scratch bernama untuk dibaca kembali.',
     },
     {
         'name': 'Komponen & commands',
@@ -91,6 +97,20 @@ API backend AGRO-SEMBADA untuk dashboard, Core Unit, sensor, komponen, kontrol, 
 2. Jalankan `GET /api/health` untuk memastikan backend membalas `ok`.
 3. Buka `GET /api/devices` dan `GET /api/components` untuk melihat data yang sudah terdaftar. Enam Core Unit (`core-1` sampai `core-6`) dan inventaris awal komponen sudah tersedia.
 4. Buka operasi `POST`, tekan **Try it out**, lalu ubah contoh body atau parameter sebelum menekan **Execute**.
+
+## Event dan variabel Scratch
+
+- Nama event bebas dikirim melalui `POST /api/events` (`event_type`) atau `POST /api/artec/events?event_type=...`; riwayatnya dibaca lewat `GET /api/events` atau `GET /api/artec/events`.
+- Variabel dibuat atau diperbarui dengan `POST /api/variables/{nama}` dan dibaca lewat `GET /api/variables/{nama}`. Nilainya boleh teks, angka, boolean, atau null.
+- Untuk blok ArtecRobo tanpa JSON body, gunakan `POST /api/artec/variables/{nama}?value=...` lalu baca teksnya dengan `GET /api/artec/variables/{nama}`.
+- Sensor dikirim melalui `POST /api/devices/{device_id}/readings` dan dibaca melalui `GET /api/readings`; format teks ArtecRobo tersedia di `/api/artec/devices/{device_id}/readings`.
+
+Contoh variabel counter:
+
+```text
+POST /api/artec/variables/jumlah_panen?value=42
+GET  /api/artec/variables/jumlah_panen
+```
 
 ## Contoh alur sensor
 
@@ -514,6 +534,41 @@ def create_app(
         ),
     ) -> list[dict]:
         return database.list_sensor_readings(app.state.database_path, limit, device_id)
+
+    def parse_variable_query_value(value: str) -> str | int | float | bool | None:
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return value
+        return parsed if parsed is None or isinstance(parsed, (str, int, float, bool)) else value
+
+    def store_scratch_variable(name: str, value: object) -> dict:
+        try:
+            return database.upsert_scratch_variable(app.state.database_path, name, value)
+        except (TypeError, ValueError) as error:
+            raise HTTPException(status_code=422, detail='Nilai variabel harus berupa scalar JSON yang valid.') from error
+
+    @app.get('/api/variables', response_model=list[ScratchVariableRecord], tags=['Events & variables'])
+    def read_scratch_variables() -> list[dict]:
+        return database.list_scratch_variables(app.state.database_path)
+
+    @app.get('/api/variables/{name}', response_model=ScratchVariableRecord, tags=['Events & variables'])
+    def read_scratch_variable(name: str) -> dict:
+        variable = database.get_scratch_variable(app.state.database_path, name)
+        if variable is None:
+            raise HTTPException(status_code=404, detail='Variabel belum dibuat.')
+        return variable
+
+    @app.post('/api/variables/{name}', response_model=ScratchVariableRecord, tags=['Events & variables'])
+    def write_scratch_variable(
+        name: str,
+        payload: ScratchVariableCreate | None = None,
+        value: str | None = Query(default=None),
+    ) -> dict:
+        if payload is None and value is None:
+            raise HTTPException(status_code=422, detail='Kirim value melalui query URL atau JSON body.')
+        selected_value = payload.value if payload is not None else parse_variable_query_value(value)
+        return store_scratch_variable(name, selected_value)
 
     @app.get('/api/devices', response_model=list[DeviceStatusRecord])
     def read_device_status() -> list[dict]:

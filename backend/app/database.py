@@ -44,6 +44,11 @@ def initialize_database(database_path: Path) -> None:
                 unit TEXT,
                 recorded_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS scratch_variables (
+                name TEXT PRIMARY KEY,
+                value_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS device_status (
                 device_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL DEFAULT '',
@@ -586,6 +591,61 @@ def get_latest_sensor_reading(
             (device_id, sensor_id),
         ).fetchone()
     return dict(row) if row else None
+
+
+def upsert_scratch_variable(database_path: Path, name: str, value: object) -> dict:
+    value_json = json.dumps(value, ensure_ascii=True, allow_nan=False)
+    updated_at = datetime.now(timezone.utc).isoformat(timespec='seconds')
+    with _connect(database_path) as connection:
+        connection.execute(
+            '''
+            INSERT INTO scratch_variables (name, value_json, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                value_json = excluded.value_json,
+                updated_at = excluded.updated_at
+            ''',
+            (name, value_json, updated_at),
+        )
+        row = connection.execute(
+            'SELECT name, value_json, updated_at FROM scratch_variables WHERE name = ?',
+            (name,),
+        ).fetchone()
+    return {
+        'name': row['name'],
+        'value': json.loads(row['value_json']),
+        'updated_at': row['updated_at'],
+    }
+
+
+def get_scratch_variable(database_path: Path, name: str) -> dict | None:
+    with _connect(database_path) as connection:
+        row = connection.execute(
+            'SELECT name, value_json, updated_at FROM scratch_variables WHERE name = ?',
+            (name,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        'name': row['name'],
+        'value': json.loads(row['value_json']),
+        'updated_at': row['updated_at'],
+    }
+
+
+def list_scratch_variables(database_path: Path) -> list[dict]:
+    with _connect(database_path) as connection:
+        rows = connection.execute(
+            'SELECT name, value_json, updated_at FROM scratch_variables ORDER BY name'
+        ).fetchall()
+    return [
+        {
+            'name': row['name'],
+            'value': json.loads(row['value_json']),
+            'updated_at': row['updated_at'],
+        }
+        for row in rows
+    ]
 
 
 def save_prediction(
