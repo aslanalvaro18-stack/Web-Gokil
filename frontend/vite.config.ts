@@ -5,7 +5,9 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [react()],
   server: {
-    allowedHosts: ['dashboard.pradnyasiwi.web.id'],
+    port: 5173,
+    strictPort: true,
+    allowedHosts: ['dashboard.pradnyasiwi.web.id', 'dev.pradnyasiwi.web.id'],
     host: '0.0.0.0',
     proxy: {
       '/api': {

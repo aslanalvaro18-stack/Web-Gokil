@@ -243,6 +243,13 @@ function formatAge(seconds: number) {
   return `${Math.floor(seconds / 86400)} hari lalu`
 }
 
+const API_BASE_URL = 'https://dev.pradnyasiwi.web.id'
+
+function buildApiUrl(path: string) {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${API_BASE_URL}${normalizedPath}`.replace(/%7B/g, '{').replace(/%7D/g, '}')
+}
+
 function App() {
   const [dashboard, setDashboard] = useState(emptyDashboard)
   const [devices, setDevices] = useState<Device[]>([])
@@ -283,7 +290,7 @@ function App() {
 
   async function copyEndpoint(path: string) {
     try {
-      await navigator.clipboard.writeText(new URL(path, window.location.origin).toString())
+      await navigator.clipboard.writeText(buildApiUrl(path))
       setCopiedEndpoint(path)
       window.setTimeout(() => setCopiedEndpoint(''), 1800)
     } catch {
@@ -728,7 +735,7 @@ function App() {
     <main className="dashboard-shell">
       <header className="topbar">
         <a className="brand" href="#dashboard" aria-label="AGRO-SEMBADA dashboard">
-          <img className="brand-mark" src="/assets/brand/dada.jpeg" alt="" width={44} height={44} />
+          <img className="brand-mark" src="/assets/brand/dada.jpeg" alt="Logo SMPN 4 Pakem" width={44} height={44} />
           <span className="brand-name">AGRO<span>-</span>SEMBADA</span>
         </a>
         <div className="topbar-meta">
@@ -1295,6 +1302,7 @@ function App() {
             { method: 'GET', path: '/api/devices', label: 'Daftar perangkat' },
             { method: 'GET', path: '/api/readings', label: 'Data sensor' },
             { method: 'POST', path: '/api/telemetry', label: 'Kirim telemetri' },
+            { method: 'GET', path: '/api/artec/devices/{device_id}/online', label: 'Status online per perangkat' },
           ].map((endpoint) => (
             <button
               className="endpoint-copy"

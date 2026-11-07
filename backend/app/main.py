@@ -170,6 +170,10 @@ def create_app(
         description='API telemetri dan prediksi visual untuk dashboard AGRO-SEMBADA.',
         version='1.0.0',
         lifespan=lifespan,
+        servers=[
+            {'url': 'https://dev.pradnyasiwi.web.id', 'description': 'Production'},
+            {'url': 'http://localhost:5173', 'description': 'Local frontend'},
+        ],
     )
     app.state.database_path = resolved_database_path
     app.state.predictor = predictor or TeachableMachineClassifier(model_path, labels_path)

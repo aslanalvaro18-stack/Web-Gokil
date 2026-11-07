@@ -16,7 +16,7 @@
 .theme-toggle:hover { border-color: var(--green); color: var(--green); }
 
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); }
-.brand-mark { width: 44px; height: 44px; flex: 0 0 auto; display: block; object-fit: cover; border: 1px solid var(--line); border-radius: 50%; background: var(--paper); }
+.brand-mark { width: 44px; height: 44px; flex: 0 0 auto; display: block; object-fit: contain; border: 1px solid var(--line); border-radius: 50%; background: transparent; }
 .brand-name { font: 800 14px/1 var(--display); letter-spacing: 0.7px; }
 .brand-name span { color: var(--tomato); }
 .topbar-meta { display: flex; align-items: center; gap: 13px; font: 600 10px/1 var(--mono); letter-spacing: 0.5px; }
