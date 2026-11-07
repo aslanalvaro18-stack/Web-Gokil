@@ -8,6 +8,20 @@ from app.main import create_app
 from app.services.teachable_machine import TeachableMachineClassifier
 
 
+def test_openapi_docs_have_local_server_groups_and_request_examples(tmp_path: Path) -> None:
+    app = create_app(tmp_path / 'docs.db', FakeClassifier(), camera_autostart=False)
+    schema = app.openapi()
+
+    assert schema['servers'][0]['url'] == '/'
+    assert 'Mulai mencoba' in schema['info']['description']
+    assert schema['paths']['/api/telemetry']['post']['tags'] == ['Devices & telemetri']
+    assert schema['paths']['/api/artec/health']['get']['tags'] == ['ArtecRobo (teks)']
+    assert schema['components']['schemas']['TelemetryCreate']['examples'] == [
+        {'uptime_seconds': 7250, 'status': 'running'}
+    ]
+    assert schema['components']['schemas']['DeviceComponentCreate']['examples'][0]['confirmed'] is False
+
+
 class FakeClassifier:
     def __init__(self, prediction: tuple[str, float] = ('owner', 0.94)) -> None:
         self.prediction = prediction

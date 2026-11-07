@@ -12,6 +12,7 @@ from typing import Callable, Literal, Protocol
 
 from fastapi import FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from app import database
@@ -52,6 +53,61 @@ from app.services.weather import WeatherUnavailableError, get_pakem_weather
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 LOGGER = logging.getLogger(__name__)
+
+DOCS_TAGS = [
+    {
+        'name': 'Sistem & kamera',
+        'description': 'Cek backend dan kelola kamera lokal. `/api/health` adalah pemeriksaan paling sederhana.',
+    },
+    {
+        'name': 'Devices & telemetri',
+        'description': 'Enam Core Unit awal memakai ID `core-1` sampai `core-6`. Kirim heartbeat dan pembacaan sensor ke ID yang sudah terdaftar.',
+    },
+    {
+        'name': 'Komponen & commands',
+        'description': 'Komponen baru boleh disimpan sebagai placeholder. Command aktuator hanya tersedia setelah komponen, unit pemilik, nilai command, dan posisi aman diverifikasi.',
+    },
+    {
+        'name': 'Identitas & prediksi',
+        'description': 'Unggah gambar sebagai multipart field `image`; keputusan akses terakhir tersedia di endpoint access.',
+    },
+    {
+        'name': 'Dashboard & kontrol',
+        'description': 'Baca ringkasan dashboard, cuaca, event, dan kendali jemur/aktuator.',
+    },
+    {
+        'name': 'ArtecRobo (teks)',
+        'description': 'Endpoint `/api/artec/...` untuk blok ArtecRobo: parameter dikirim melalui query URL dan respons berupa teks sederhana.',
+    },
+]
+
+DOCS_DESCRIPTION = '''
+API backend AGRO-SEMBADA untuk dashboard, Core Unit, sensor, komponen, kontrol, dan integrasi ArtecRobo.
+
+## Mulai mencoba
+
+1. Pilih **Server ini** agar permintaan dikirim ke host yang sedang membuka `/docs` (lokal: `http://localhost:3000`).
+2. Jalankan `GET /api/health` untuk memastikan backend membalas `ok`.
+3. Buka `GET /api/devices` dan `GET /api/components` untuk melihat data yang sudah terdaftar. Enam Core Unit (`core-1` sampai `core-6`) dan inventaris awal komponen sudah tersedia.
+4. Buka operasi `POST`, tekan **Try it out**, lalu ubah contoh body atau parameter sebelum menekan **Execute**.
+
+## Contoh alur sensor
+
+`POST /api/devices/core-1/readings` dengan body:
+
+```json
+{"sensor_id":"light-1","sensor_type":"light","value":360,"unit":"lux"}
+```
+
+Lalu cek datanya lewat `GET /api/readings?device_id=core-1`.
+
+## Aturan penting
+
+- ID alat dan komponen harus unik. Endpoint registrasi mengembalikan `409` jika ID sudah dipakai.
+- Komponen baru sebaiknya dimulai dengan `confirmed: false`, `enabled: false`, dan `device_id: null`. Verifikasi wiring dan unit pemilik sebelum mengaktifkannya.
+- Command unit memerlukan header `X-Device-Token`; token dikonfigurasi di backend dan jangan diletakkan di URL.
+- Endpoint `/api/artec/...` menggunakan parameter URL dan umumnya membalas teks, sedangkan endpoint `/api/...` utama menggunakan JSON.
+'''
 
 
 class Classifier(Protocol):
@@ -167,10 +223,13 @@ def create_app(
 
     app = FastAPI(
         title='AGRO-SEMBADA API',
-        description='API telemetri dan prediksi visual untuk dashboard AGRO-SEMBADA.',
+        description=DOCS_DESCRIPTION,
         version='1.0.0',
+        openapi_tags=DOCS_TAGS,
         lifespan=lifespan,
         servers=[
+            {'url': '/', 'description': 'Server ini (host yang membuka /docs)'},
+            {'url': 'http://localhost:3000', 'description': 'Backend lokal port 3000'},
             {'url': 'https://dev.pradnyasiwi.web.id', 'description': 'Production'},
             {'url': 'http://localhost:5173', 'description': 'Local frontend'},
         ],
@@ -1432,6 +1491,50 @@ def create_app(
             detail=detail,
         )
         return command['status']
+
+    def openapi_with_learning_groups() -> dict:
+        if app.openapi_schema:
+            return app.openapi_schema
+
+        schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+            tags=DOCS_TAGS,
+            servers=app.servers,
+        )
+        for path, path_item in schema['paths'].items():
+            if path.startswith('/api/artec/'):
+                tag = 'ArtecRobo (teks)'
+            elif path.startswith('/api/camera/') or path == '/api/health':
+                tag = 'Sistem & kamera'
+            elif (
+                path.startswith('/api/components')
+                or path.startswith('/api/component-condition-reports')
+                or '/components/' in path
+                or '/commands' in path
+            ):
+                tag = 'Komponen & commands'
+            elif (
+                path.startswith('/api/devices')
+                or path.startswith('/api/readings')
+                or path.startswith('/api/telemetry')
+            ):
+                tag = 'Devices & telemetri'
+            elif path.startswith('/api/predictions') or path.startswith('/api/access'):
+                tag = 'Identitas & prediksi'
+            else:
+                tag = 'Dashboard & kontrol'
+
+            for operation in path_item.values():
+                if isinstance(operation, dict) and 'responses' in operation:
+                    operation['tags'] = [tag]
+
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = openapi_with_learning_groups
 
     return app
 

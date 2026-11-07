@@ -243,6 +243,19 @@ function formatAge(seconds: number) {
   return `${Math.floor(seconds / 86400)} hari lalu`
 }
 
+function suggestUniqueId(value: string, existingIds: string[], maxLength: number) {
+  const base = value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'item'
+  const existing = new Set(existingIds)
+  let suffix = 1
+
+  while (true) {
+    const ending = `-${suffix}`
+    const candidate = `${base.slice(0, maxLength - ending.length).replace(/-+$/g, '')}${ending}`
+    if (!existing.has(candidate)) return candidate
+    suffix += 1
+  }
+}
+
 const API_BASE_URL = 'https://dev.pradnyasiwi.web.id'
 
 function buildApiUrl(path: string) {
@@ -537,6 +550,22 @@ function App() {
     } finally {
       setDeviceBusy(false)
     }
+  }
+
+  const fillComponentSuggestion = (inventoryId: string) => {
+    const inventory = components.find((component) => component.component_id === inventoryId)
+    if (!inventory) return
+
+    const suggestedName = inventory.name.replace(/\s*\(perkiraan\)\s*/i, '').trim()
+    const suggestedType = inventory.component_type.replace(/_estimate$/, '')
+    const supportedTypes = ['dc_motor', 'servo', 'light_sensor', 'sound_sensor', 'ir_photoreflector']
+    setComponentIdInput(suggestUniqueId(suggestedName, components.map((component) => component.component_id), 80))
+    setComponentNameInput(suggestedName)
+    setComponentTypeInput(supportedTypes.includes(suggestedType) ? suggestedType : 'other')
+    setComponentEstimatedCountInput(inventory.estimated_count ?? '')
+    setComponentDeviceInput('')
+    setComponentConfirmedInput(false)
+    setComponentNotice('Saran diterapkan. Verifikasi pemetaan fisik sebelum mengaktifkan command.')
   }
 
   const registerComponent = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -864,7 +893,13 @@ function App() {
               maxLength={80}
               required
             />
-            <label htmlFor="device-id">ID alat</label>
+            <div className="device-id-heading">
+              <label htmlFor="device-id">ID alat</label>
+              <button
+                type="button"
+                onClick={() => setDeviceIdInput(suggestUniqueId(deviceNameInput || 'alat', devices.map((device) => device.device_id), 40))}
+              >Buat ID otomatis</button>
+            </div>
             <input
               id="device-id"
               value={deviceIdInput}
@@ -993,6 +1028,7 @@ function App() {
             <span>Mapping awal boleh dibiarkan belum terkonfirmasi.</span>
           </div>
           <div className="component-form-grid">
+            {!editingComponentId && <label className="component-suggestion">Saran dari inventaris<select value="" onChange={(event) => fillComponentSuggestion(event.target.value)}><option value="">Pilih inventaris untuk mengisi data</option>{components.filter((component) => component.component_type.endsWith('_estimate') || component.component_type === 'unconfirmed_inventory').map((component) => <option value={component.component_id} key={component.component_id}>{component.name}{component.estimated_count ? ` · ${component.estimated_count}` : ''}</option>)}</select></label>}
             <label>ID komponen<input id="component-id" value={componentIdInput} onChange={(event) => setComponentIdInput(event.target.value)} pattern="[A-Za-z0-9][A-Za-z0-9_]*(-[A-Za-z0-9_]+)*" maxLength={80} required placeholder="motor-elevator-1" disabled={editingComponentId !== null} /></label>
             <label>Nama<input value={componentNameInput} onChange={(event) => setComponentNameInput(event.target.value)} maxLength={100} required placeholder="Motor elevator" /></label>
             <label>Jenis<select value={componentTypeInput} onChange={(event) => setComponentTypeInput(event.target.value)}><option value="dc_motor">Motor DC</option><option value="servo">Servo</option><option value="light_sensor">Sensor cahaya</option><option value="sound_sensor">Sensor suara</option><option value="ir_photoreflector">IR photoreflector</option><option value="other">Lainnya</option></select></label>

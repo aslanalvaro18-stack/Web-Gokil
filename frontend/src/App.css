@@ -102,6 +102,9 @@
 .device-form h3 { margin: 0; color: var(--ink); font: 650 13px/1.2 var(--display); }
 .device-form .section-index { margin-bottom: 5px; }
 .device-form label { color: var(--muted); font-size: 9px; }
+.device-id-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.device-id-heading label { color: var(--muted); font-size: 9px; }
+.device-id-heading button { padding: 0; border: 0; color: var(--green); background: transparent; font: 600 8px/1 var(--mono); cursor: pointer; }
 .device-form input { width: 100%; min-width: 0; height: 33px; padding: 0 9px; border: 1px solid var(--line); border-radius: 3px; color: var(--ink); background: #fff; font: 10px var(--mono); }
 .device-form input::placeholder { color: #a4aaa2; }
 .device-form .button { justify-self: start; margin-top: 3px; }
@@ -175,6 +178,7 @@
 .component-form-heading span { color: var(--muted); font-size: 9px; }
 .component-form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
 .component-form-grid label { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 9px; }
+.component-form-grid .component-suggestion { grid-column: span 2; }
 .component-form-grid input, .component-form-grid select { width: 100%; min-width: 0; height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: 3px; color: var(--ink); background: var(--paper); font: 9px var(--mono); }
 .component-confirm-label { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 9px; }
 .component-confirm-label input { accent-color: var(--green); }
