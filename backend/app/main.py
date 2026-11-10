@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Literal, Protocol
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -1690,6 +1691,20 @@ def create_app(
         if isinstance(value, bool):
             return 'true' if value else 'false'
         return str(value)
+
+    @app.get('/api/artec/time', response_class=PlainTextResponse)
+    def artec_time() -> str:
+        return datetime.now(ZoneInfo('Asia/Jakarta')).strftime('%H.%M')
+
+    @app.get('/api/artec/date', response_class=PlainTextResponse)
+    def artec_date() -> str:
+        now = datetime.now(ZoneInfo('Asia/Jakarta'))
+        weekdays = ('Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu')
+        months = (
+            'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+            'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+        )
+        return f'{weekdays[now.weekday()]}, {now.day}, {months[now.month - 1]}, {now.year}'
 
     @app.get('/api/artec/weather', response_class=PlainTextResponse)
     def artec_weather_snapshot() -> str:

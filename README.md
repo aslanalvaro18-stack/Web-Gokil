@@ -84,6 +84,8 @@ Gunakan endpoint `/api/artec/` bila blok ArtecRobo lebih mudah mengolah teks dar
 | Method | URL | Output / parameter |
 | --- | --- | --- |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/health` | `ok` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/time` | Jam lokal WIB, misalnya `21.00` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/date` | Tanggal lokal WIB, misalnya `Senin, 22, Agustus, 2026` |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices/all-online` | `true` jika semua alat terdaftar hidup dan heartbeat-nya baru; selain itu `false` |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1/status` | `hidup`, `mati`, `belum_terhubung`, atau `tidak_dikenal` |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1/online` | `true` atau `false` |

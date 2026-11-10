@@ -153,6 +153,27 @@ def test_artec_aliases_cover_control_events_weather_and_components(tmp_path: Pat
     assert emergency_state.text == 'on'
 
 
+def test_artec_time_and_date_are_plain_text(tmp_path: Path) -> None:
+    app = create_app(tmp_path / 'test.db', FakeClassifier())
+    with TestClient(app) as client:
+        time_response = client.get('/api/artec/time')
+        date_response = client.get('/api/artec/date')
+
+    assert time_response.status_code == 200
+    assert time_response.text[:2].isdigit() and time_response.text[2] == '.'
+    assert time_response.text[3:].isdigit() and len(time_response.text) == 5
+    assert time_response.headers['content-type'].startswith('text/plain')
+    assert date_response.status_code == 200
+    assert date_response.text.split(', ')[0] in {
+        'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu',
+    }
+    assert date_response.text.split(', ')[2] in {
+        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+    }
+    assert date_response.headers['content-type'].startswith('text/plain')
+
+
 def test_artec_event_flags_support_one_shot_and_ack_modes(tmp_path: Path) -> None:
     app = create_app(tmp_path / 'test.db', FakeClassifier())
     with TestClient(app) as client:
