@@ -27,6 +27,8 @@ def test_openapi_docs_have_local_server_groups_and_request_examples(tmp_path: Pa
     assert token_parameter['in'] == 'query'
     assert docs.status_code == 200
     assert 'copy-api-url' in docs.text
+    assert 'copy-api-url-try' in docs.text
+    assert 'Salin URL request' in docs.text
 
 
 class FakeClassifier:
@@ -151,6 +153,78 @@ def test_artec_aliases_cover_control_events_weather_and_components(tmp_path: Pat
     assert emergency_state.text == 'on'
 
 
+def test_artec_event_flags_support_one_shot_and_ack_modes(tmp_path: Path) -> None:
+    app = create_app(tmp_path / 'test.db', FakeClassifier())
+    with TestClient(app) as client:
+        one_shot = client.post('/api/event-flags', json={'name': 'buka_lumbung', 'mode': 'once'})
+        client.put('/api/event-flags/buka_lumbung', json={'active': True})
+        first_read = client.get('/api/artec/events/buka_lumbung')
+        consumed_read = client.get('/api/artec/events/buka_lumbung')
+
+        ack_flag = client.post('/api/event-flags', json={'name': 'tutup_lumbung', 'mode': 'ack'})
+        client.put('/api/event-flags/tutup_lumbung', json={'active': True})
+        held_read_1 = client.get('/api/artec/events/tutup_lumbung')
+        held_read_2 = client.get('/api/artec/events/tutup_lumbung')
+        reset = client.post('/api/artec/events/tutup_lumbung?value=false')
+        reset_read = client.get('/api/artec/events/tutup_lumbung')
+        flags = client.get('/api/event-flags').json()
+
+    assert one_shot.status_code == 201
+    assert first_read.text == 'true'
+    assert consumed_read.text == 'false'
+    assert ack_flag.status_code == 201
+    assert held_read_1.text == held_read_2.text == 'true'
+    assert reset.text == 'tersimpan'
+    assert reset_read.text == 'false'
+    assert {flag['name']: flag['mode'] for flag in flags} == {
+        'buka_lumbung': 'once',
+        'tutup_lumbung': 'ack',
+    }
+
+
+def test_artec_aliases_cover_json_collections_and_snapshots(tmp_path: Path) -> None:
+    app = create_app(
+        tmp_path / 'test.db',
+        FakeClassifier(),
+        weather_provider=lambda: {'condition': 'Cerah', 'temperature_c': 23.5},
+    )
+    with TestClient(app) as client:
+        status = client.post('/api/artec/devices/status?device_id=core-1&status=hidup')
+        telemetry = client.post('/api/artec/telemetry?uptime_seconds=7250&status=running')
+        reading = client.post(
+            '/api/artec/devices/core-1/readings'
+            '?sensor_id=light-1&sensor_type=light&value=360&unit=lux'
+        )
+        component = client.post(
+            '/api/artec/components?component_id=lamp-1&name=Lampu&component_type=light&device_id=core-1'
+        )
+        component_record = client.get('/api/artec/components/lamp-1')
+        telemetry_list = client.get('/api/artec/telemetry?limit=10')
+        readings = client.get('/api/artec/readings?device_id=core-1&limit=10')
+        condition_reports = client.get('/api/artec/component-condition-reports?device_id=core-1')
+        device_record = client.get('/api/artec/devices/core-1')
+        dashboard = client.get('/api/artec/dashboard')
+        control = client.get('/api/artec/control/state')
+        weather = client.get('/api/artec/weather')
+        prediction = client.get('/api/artec/predictions/latest')
+        access = client.get('/api/artec/access/latest')
+
+    assert status.text == 'hidup'
+    assert telemetry.text == 'tersimpan'
+    assert reading.text == 'tersimpan'
+    assert component.text == 'tersimpan'
+    assert '7250|running|' in telemetry_list.text
+    assert 'core-1|light-1|light|360.0|lux|' in readings.text
+    assert 'lamp-1|Lampu|light|core-1|' in component_record.text
+    assert 'core-1|Core Unit 1|hidup|online|' in device_record.text
+    assert condition_reports.text == 'kosong'
+    assert 'uptime_seconds|7250' in dashboard.text
+    assert 'emergency_mode|false' in control.text
+    assert 'temperature_c|23.5' in weather.text
+    assert prediction.text == 'tidak_ada_data'
+    assert access.text.startswith('unknown|false|')
+
+
 def test_telemetry_is_saved_and_returned(tmp_path: Path) -> None:
     app = create_app(tmp_path / 'test.db', FakeClassifier())
     with TestClient(app) as client:
@@ -168,6 +242,25 @@ def test_telemetry_is_saved_and_returned(tmp_path: Path) -> None:
 
     assert dashboard['telemetry']['uptime_seconds'] == 7250
     assert len(history) == 1
+
+
+def test_device_name_update_preserves_status_and_heartbeat(tmp_path: Path) -> None:
+    app = create_app(tmp_path / 'test.db', FakeClassifier())
+    with TestClient(app) as client:
+        client.post('/api/devices/core-1/status?status=hidup')
+        before = client.get('/api/devices/core-1/status').json()
+        renamed = client.put('/api/devices/core-1', json={'name': 'Core Unit Pengering'})
+        after = client.get('/api/devices/core-1/status').json()
+        unknown = client.put('/api/devices/core-99', json={'name': 'Core Unit 99'})
+        blank = client.put('/api/devices/core-1', json={'name': '   '})
+
+    assert renamed.status_code == 200
+    assert renamed.json()['name'] == 'Core Unit Pengering'
+    assert after['name'] == 'Core Unit Pengering'
+    assert after['status'] == before['status']
+    assert after['last_seen'] == before['last_seen']
+    assert unknown.status_code == 404
+    assert blank.status_code == 422
 
 
 def test_sensor_readings_accept_json_and_url_parameters(tmp_path: Path) -> None:

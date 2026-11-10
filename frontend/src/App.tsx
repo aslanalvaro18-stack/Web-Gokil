@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useEffectEvent, useRef, useState } from 'react'
+import { Component, lazy, Suspense, useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react'
 import {
   Activity,
   AlertCircle,
@@ -32,6 +32,21 @@ import './App.css'
 
 const MachineOverview = lazy(() => import('./components/MachineOverview'))
 
+class MachineOverviewErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false }
+
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <section className="machine-scene-loading" role="status">Visualisasi mesin tidak dapat dimuat.</section>
+    }
+    return this.props.children
+  }
+}
+
 type Telemetry = {
   uptime_seconds: number
   status: string
@@ -51,6 +66,13 @@ type SensorReading = {
 type ScratchVariable = {
   name: string
   value: string | number | boolean | null
+  updated_at: string
+}
+
+type EventFlag = {
+  name: string
+  active: boolean
+  mode: 'once' | 'ack'
   updated_at: string
 }
 
@@ -276,6 +298,7 @@ function App() {
   const [componentHistory, setComponentHistory] = useState<Record<string, ComponentConditionHistory>>({})
   const [sensorReadings, setSensorReadings] = useState<SensorReading[]>([])
   const [scratchVariables, setScratchVariables] = useState<ScratchVariable[]>([])
+  const [eventFlags, setEventFlags] = useState<EventFlag[]>([])
   const [cameraStatus, setCameraStatus] = useState(emptyCameraStatus)
   const [apiOnline, setApiOnline] = useState(false)
   const [copiedEndpoint, setCopiedEndpoint] = useState('')
@@ -291,8 +314,17 @@ function App() {
   const [editingVariableName, setEditingVariableName] = useState<string | null>(null)
   const [variableBusy, setVariableBusy] = useState(false)
   const [variableNotice, setVariableNotice] = useState('')
+  const [eventNameInput, setEventNameInput] = useState('')
+  const [eventValueInput, setEventValueInput] = useState('')
+  const [eventBusy, setEventBusy] = useState(false)
+  const [eventNotice, setEventNotice] = useState('')
+  const [eventFlagNameInput, setEventFlagNameInput] = useState('')
+  const [eventFlagModeInput, setEventFlagModeInput] = useState<EventFlag['mode']>('once')
+  const [eventFlagBusy, setEventFlagBusy] = useState(false)
+  const [eventFlagNotice, setEventFlagNotice] = useState('')
   const [deviceIdInput, setDeviceIdInput] = useState('')
   const [deviceNameInput, setDeviceNameInput] = useState('')
+  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null)
   const [deviceBusy, setDeviceBusy] = useState(false)
   const [deviceNotice, setDeviceNotice] = useState('')
   const [componentIdInput, setComponentIdInput] = useState('')
@@ -334,22 +366,24 @@ function App() {
 
     const refresh = async () => {
       try {
-        const [dashboardResponse, devicesResponse, readingsResponse, componentsResponse, variablesResponse] = await Promise.all([
+        const [dashboardResponse, devicesResponse, readingsResponse, componentsResponse, variablesResponse, eventFlagsResponse] = await Promise.all([
           fetch('/api/dashboard'),
           fetch('/api/devices'),
           fetch('/api/readings?limit=100'),
           fetch('/api/components'),
           fetch('/api/variables'),
+          fetch('/api/event-flags'),
         ])
-        if (!dashboardResponse.ok || !devicesResponse.ok || !readingsResponse.ok || !componentsResponse.ok || !variablesResponse.ok) {
+        if (!dashboardResponse.ok || !devicesResponse.ok || !readingsResponse.ok || !componentsResponse.ok || !variablesResponse.ok || !eventFlagsResponse.ok) {
           throw new Error('Backend tidak merespons')
         }
-        const [data, deviceData, readingData, componentData, variableData] = await Promise.all([
+        const [data, deviceData, readingData, componentData, variableData, eventFlagData] = await Promise.all([
           dashboardResponse.json() as Promise<DashboardData>,
           devicesResponse.json() as Promise<Device[]>,
           readingsResponse.json() as Promise<SensorReading[]>,
           componentsResponse.json() as Promise<DeviceComponent[]>,
           variablesResponse.json() as Promise<ScratchVariable[]>,
+          eventFlagsResponse.json() as Promise<EventFlag[]>,
         ])
         if (active) {
           setDashboard(data)
@@ -357,6 +391,7 @@ function App() {
           setSensorReadings(readingData)
           setComponents(componentData)
           setScratchVariables(variableData)
+          setEventFlags(eventFlagData)
           setApiOnline(true)
         }
       } catch {
@@ -599,31 +634,122 @@ function App() {
     }
   }
 
+  const submitCustomEvent = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setEventBusy(true)
+    setEventNotice('Mencatat event...')
+    try {
+      const response = await fetch('/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_type: eventNameInput.trim(),
+          value: eventValueInput.trim() || null,
+          duration_seconds: null,
+          detail: {},
+        }),
+      })
+      const body = (await response.json()) as OperationEvent & { detail?: string }
+      if (!response.ok) throw new Error(body.detail ?? 'Event gagal dicatat.')
+      setDashboard((current) => ({ ...current, events: [body, ...current.events].slice(0, 200) }))
+      setEventNameInput('')
+      setEventValueInput('')
+      setEventNotice(`Event ${body.event_type} berhasil dicatat.`)
+    } catch (error) {
+      setEventNotice(error instanceof Error ? error.message : 'Tidak dapat mencatat event.')
+    } finally {
+      setEventBusy(false)
+    }
+  }
+
+  const createEventFlag = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setEventFlagBusy(true)
+    setEventFlagNotice('Membuat event flag...')
+    try {
+      const response = await fetch('/api/event-flags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: eventFlagNameInput.trim(), mode: eventFlagModeInput }),
+      })
+      const body = (await response.json()) as EventFlag & { detail?: string }
+      if (!response.ok) throw new Error(body.detail ?? 'Event flag gagal dibuat.')
+      setEventFlags((current) => [...current, body].sort((first, second) => first.name.localeCompare(second.name)))
+      setEventFlagNameInput('')
+      setEventFlagNotice(`Event ${body.name} siap dinyalakan.`)
+    } catch (error) {
+      setEventFlagNotice(error instanceof Error ? error.message : 'Tidak dapat membuat event flag.')
+    } finally {
+      setEventFlagBusy(false)
+    }
+  }
+
+  const updateEventFlag = async (flag: EventFlag, changes: Partial<Pick<EventFlag, 'active' | 'mode'>>) => {
+    setEventFlagBusy(true)
+    setEventFlagNotice('Memperbarui event flag...')
+    try {
+      const response = await fetch(`/api/event-flags/${encodeURIComponent(flag.name)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(changes),
+      })
+      const body = (await response.json()) as EventFlag & { detail?: string }
+      if (!response.ok) throw new Error(body.detail ?? 'Event flag gagal diperbarui.')
+      setEventFlags((current) => current.map((item) => item.name === body.name ? body : item))
+      setEventFlagNotice(`${body.name} ${body.active ? 'aktif' : 'mati'} · ${body.mode === 'once' ? 'sekali dibaca' : 'menunggu reset Artec'}.`)
+    } catch (error) {
+      setEventFlagNotice(error instanceof Error ? error.message : 'Tidak dapat memperbarui event flag.')
+    } finally {
+      setEventFlagBusy(false)
+    }
+  }
+
   const registerDevice = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setDeviceBusy(true)
     setDeviceNotice('')
+    const isEditing = editingDeviceId !== null
 
     try {
-      const response = await fetch('/api/devices', {
-        method: 'POST',
+      const response = await fetch(
+        isEditing ? `/api/devices/${encodeURIComponent(editingDeviceId)}` : '/api/devices',
+        {
+        method: isEditing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          device_id: deviceIdInput.trim(),
-          name: deviceNameInput.trim(),
-        }),
+        body: JSON.stringify(isEditing
+          ? { name: deviceNameInput.trim() }
+          : { device_id: deviceIdInput.trim(), name: deviceNameInput.trim() }),
       })
       const body = (await response.json()) as Device & { detail?: string }
-      if (!response.ok) throw new Error(body.detail ?? 'Alat gagal ditambahkan.')
-      setDevices((current) => [...current, body].sort((first, second) => first.device_id.localeCompare(second.device_id)))
+      if (!response.ok) throw new Error(body.detail ?? (isEditing ? 'Nama alat gagal diubah.' : 'Alat gagal ditambahkan.'))
+      setDevices((current) => (isEditing
+        ? current.map((device) => device.device_id === body.device_id ? body : device)
+        : [...current, body]
+      ).sort((first, second) => first.device_id.localeCompare(second.device_id)))
       setDeviceIdInput('')
       setDeviceNameInput('')
-      setDeviceNotice(`${body.name} berhasil ditambahkan.`)
+      setEditingDeviceId(null)
+      setDeviceNotice(isEditing ? `Nama ${body.device_id} berhasil diubah.` : `${body.name} berhasil ditambahkan.`)
     } catch (error) {
       setDeviceNotice(error instanceof Error ? error.message : 'Tidak dapat menambahkan alat.')
     } finally {
       setDeviceBusy(false)
     }
+  }
+
+  const editDeviceName = (device: Device) => {
+    setEditingDeviceId(device.device_id)
+    setDeviceIdInput(device.device_id)
+    setDeviceNameInput(device.name)
+    setDeviceNotice('')
+    document.getElementById('device-name')?.focus()
+  }
+
+  const cancelDeviceNameEdit = () => {
+    setEditingDeviceId(null)
+    setDeviceIdInput('')
+    setDeviceNameInput('')
+    setDeviceNotice('')
   }
 
   const fillComponentSuggestion = (inventoryId: string) => {
@@ -950,13 +1076,20 @@ function App() {
                   <strong>{device.status === 'hidup' ? 'HIDUP' : device.status === 'mati' ? 'MATI' : 'BELUM TERHUBUNG'}</strong>
                   <span>{device.connection_status === 'stale' ? 'Laporan status terlambat' : device.age_seconds === null ? 'Belum pernah melapor' : `Terakhir ${formatAge(device.age_seconds)}`}</span>
                 </div>
+                <button
+                  className="device-name-edit"
+                  type="button"
+                  onClick={() => editDeviceName(device)}
+                  title={`Ubah nama ${device.name}`}
+                  aria-label={`Ubah nama ${device.name}`}
+                ><Pencil size={13} /></button>
               </div>
             ))}
           </div>
           <form className="device-form" onSubmit={(event) => void registerDevice(event)}>
             <div>
-              <p className="section-index">REGISTRASI</p>
-              <h3>Tambah alat</h3>
+              <p className="section-index">{editingDeviceId ? 'PENGATURAN NAMA' : 'REGISTRASI'}</p>
+              <h3>{editingDeviceId ? 'Ubah nama perangkat' : 'Tambah alat'}</h3>
             </div>
             <label htmlFor="device-name">Nama alat</label>
             <input
@@ -967,33 +1100,39 @@ function App() {
               maxLength={80}
               required
             />
-            <div className="device-id-heading">
-              <label htmlFor="device-id">ID alat</label>
-              <button
-                type="button"
-                onClick={() => setDeviceIdInput(suggestUniqueId(deviceNameInput || 'alat', devices.map((device) => device.device_id), 40))}
-              >Buat ID otomatis</button>
-            </div>
-            <input
-              id="device-id"
-              value={deviceIdInput}
-              onChange={(event) => setDeviceIdInput(event.target.value)}
-              placeholder="Contoh: pompa-air"
-              pattern="[A-Za-z0-9][A-Za-z0-9_]*(-[A-Za-z0-9_]+)*"
-              maxLength={40}
-              required
-            />
+            {!editingDeviceId && <>
+              <div className="device-id-heading">
+                <label htmlFor="device-id">ID alat</label>
+                <button
+                  type="button"
+                  onClick={() => setDeviceIdInput(suggestUniqueId(deviceNameInput || 'alat', devices.map((device) => device.device_id), 40))}
+                >Buat ID otomatis</button>
+              </div>
+              <input
+                id="device-id"
+                value={deviceIdInput}
+                onChange={(event) => setDeviceIdInput(event.target.value)}
+                placeholder="Contoh: pompa-air"
+                pattern="[A-Za-z0-9][A-Za-z0-9_]*(-[A-Za-z0-9_]+)*"
+                maxLength={40}
+                required
+              />
+            </>}
             <button className="button button-primary" type="submit" disabled={deviceBusy || !apiOnline}>
-              <Plus size={15} /> Tambah perangkat
+              {editingDeviceId ? <Check size={15} /> : <Plus size={15} />}
+              {editingDeviceId ? 'Simpan nama' : 'Tambah perangkat'}
             </button>
+            {editingDeviceId && <button className="button button-secondary" type="button" onClick={cancelDeviceNameEdit}>Batal</button>}
             {deviceNotice && <p className="device-notice" role="status">{deviceNotice}</p>}
           </form>
         </div>
       </section>
 
-      <Suspense fallback={<section className="machine-scene-loading" aria-live="polite">Memuat visualisasi unit...</section>}>
-        <MachineOverview devices={devices} theme={theme} />
-      </Suspense>
+      <MachineOverviewErrorBoundary>
+        <Suspense fallback={<section className="machine-scene-loading" aria-live="polite">Memuat visualisasi unit...</section>}>
+          <MachineOverview devices={devices} theme={theme} />
+        </Suspense>
+      </MachineOverviewErrorBoundary>
 
       <section className="panel sensor-panel" aria-labelledby="sensor-readings-title">
         <div className="panel-heading compact-heading">
@@ -1328,8 +1467,90 @@ function App() {
               <p className="section-index">04 / LOG OPERASI</p>
               <h2>Aktivitas alat</h2>
             </div>
-            <span className="get-label">GET</span>
+            <div className="event-methods"><span className="post-label">POST</span><span className="get-label">GET</span></div>
           </div>
+          <div className="event-flag-manager">
+            <div className="event-flag-heading">
+              <strong>Sinyal untuk ArtecRobo</strong>
+              <span>GET sekali baca atau tunggu POST false dari alat</span>
+            </div>
+            <form className="event-flag-create" onSubmit={(event) => void createEventFlag(event)}>
+              <label>
+                <span>Nama flag</span>
+                <input
+                  value={eventFlagNameInput}
+                  onChange={(event) => setEventFlagNameInput(event.target.value)}
+                  pattern="[A-Za-z0-9][A-Za-z0-9_-]*"
+                  maxLength={80}
+                  required
+                  placeholder="buka_lumbung"
+                />
+              </label>
+              <label>
+                <span>Reset</span>
+                <select value={eventFlagModeInput} onChange={(event) => setEventFlagModeInput(event.target.value as EventFlag['mode'])}>
+                  <option value="once">Setelah GET pertama</option>
+                  <option value="ack">Saat Artec POST false</option>
+                </select>
+              </label>
+              <button className="button button-secondary" type="submit" disabled={eventFlagBusy || !apiOnline}>
+                <Plus size={14} /> Buat flag
+              </button>
+            </form>
+            <div className="event-flag-list" aria-live="polite">
+              {eventFlags.length === 0 ? (
+                <p className="empty-events">Belum ada flag untuk ArtecRobo.</p>
+              ) : eventFlags.map((flag) => (
+                <div className="event-flag-row" key={flag.name}>
+                  <div className="event-flag-identity">
+                    <strong>{flag.name}</strong>
+                    <span className={flag.active ? 'event-flag-active' : ''}>{flag.active ? 'AKTIF' : 'MATI'}</span>
+                  </div>
+                  <select
+                    aria-label={`Mode reset ${flag.name}`}
+                    value={flag.mode}
+                    disabled={eventFlagBusy || !apiOnline}
+                    onChange={(event) => void updateEventFlag(flag, { mode: event.target.value as EventFlag['mode'] })}
+                  >
+                    <option value="once">Sekali dibaca</option>
+                    <option value="ack">Tunggu POST false</option>
+                  </select>
+                  <button
+                    className={flag.active ? 'button button-secondary' : 'button button-primary'}
+                    type="button"
+                    disabled={eventFlagBusy || !apiOnline}
+                    onClick={() => void updateEventFlag(flag, { active: !flag.active })}
+                  >{flag.active ? 'Matikan' : 'Nyalakan'}</button>
+                </div>
+              ))}
+            </div>
+            {eventFlagNotice && <p className="device-notice" role="status">{eventFlagNotice}</p>}
+          </div>
+          <form className="event-compose" onSubmit={(event) => void submitCustomEvent(event)}>
+            <label>
+              <span>Nama event</span>
+              <input
+                value={eventNameInput}
+                onChange={(event) => setEventNameInput(event.target.value)}
+                maxLength={80}
+                required
+                placeholder="panen_dimulai"
+              />
+            </label>
+            <label>
+              <span>Nilai</span>
+              <input
+                value={eventValueInput}
+                onChange={(event) => setEventValueInput(event.target.value)}
+                maxLength={160}
+                placeholder="blok_1 (opsional)"
+              />
+            </label>
+            <button className="button button-primary" type="submit" disabled={eventBusy || !apiOnline}>
+              <Send size={14} /> Catat event
+            </button>
+            {eventNotice && <p className="device-notice" role="status">{eventNotice}</p>}
+          </form>
           <div className="event-list">
             {dashboard.events.length === 0 ? (
               <p className="empty-events">Belum ada event operasi.</p>

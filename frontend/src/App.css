@@ -96,6 +96,8 @@
 .device-state-hidup strong { color: var(--green); }
 .device-state-mati strong { color: #a64c3c; }
 .device-state-stale strong { color: #9a6a18; }
+.device-name-edit { width: 27px; height: 27px; flex: 0 0 auto; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); background: var(--paper); cursor: pointer; }
+.device-name-edit:hover { border-color: var(--green); color: var(--green); }
 .empty-devices { grid-column: 1 / -1; margin: 0; padding: 18px 0; color: var(--muted); font-size: 10px; }
 .device-form { display: grid; grid-template-columns: 1fr; gap: 7px; padding-left: 16px; border-left: 1px solid var(--line); }
 .device-form > div { margin-bottom: 3px; }
@@ -300,6 +302,19 @@
 .drying-actions input:disabled { opacity: 0.55; }
 .drying-actions .button { margin-left: auto; }
 .control-footnote { margin: 11px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.event-flag-manager { margin-top: 14px; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.event-flag-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.event-flag-heading strong { color: var(--ink); font: 650 11px/1.2 var(--display); }
+.event-flag-heading span { color: var(--muted); font-size: 9px; text-align: right; }
+.event-flag-create { display: grid; grid-template-columns: minmax(0, 1fr) minmax(145px, 0.8fr) auto; align-items: end; gap: 8px; margin-top: 10px; }
+.event-flag-create label { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 9px; }
+.event-flag-create input, .event-flag-create select, .event-flag-row select { width: 100%; min-width: 0; height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: 3px; color: var(--ink); background: var(--paper); font: 9px var(--mono); }
+.event-flag-list { display: grid; margin-top: 9px; }
+.event-flag-row { display: grid; grid-template-columns: minmax(95px, 1fr) minmax(145px, 0.9fr) auto; align-items: center; gap: 8px; min-width: 0; padding: 7px 0; border-top: 1px solid var(--line); }
+.event-flag-identity { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.event-flag-identity strong { overflow: hidden; color: var(--ink); font: 600 10px/1.2 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.event-flag-identity span { color: var(--muted); font: 600 7px/1 var(--mono); }
+.event-flag-identity .event-flag-active { color: var(--green); }
 .event-list { margin-top: 12px; }
 .event-row { min-height: 45px; display: flex; align-items: center; gap: 9px; border-top: 1px solid var(--line); }
 .event-marker { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #82988a; }
@@ -311,6 +326,13 @@
 .event-copy span { color: var(--muted); font: 8px/1.2 var(--mono); }
 .event-value { margin-left: auto; color: var(--ink); font: 500 9px/1.2 var(--mono); text-align: right; }
 .empty-events { margin: 0; padding: 18px 0; color: var(--muted); font-size: 10px; }
+.event-methods { display: flex; gap: 5px; }
+.event-compose { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 7px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.event-compose label { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 9px; }
+.event-compose input { width: 100%; min-width: 0; height: 33px; padding: 0 8px; border: 1px solid var(--line); border-radius: 3px; color: var(--ink); background: var(--paper); font: 9px var(--mono); }
+.event-compose input::placeholder { color: #a4aaa2; }
+.event-compose .button { min-height: 33px; padding: 0 10px; font-size: 9px; }
+.event-compose .device-notice { grid-column: 1 / -1; }
 
 .telemetry-panel, .history-panel { padding: 17px 19px; }
 .compact-heading { align-items: center; }
@@ -397,6 +419,13 @@
   .control-grid { grid-template-columns: 1fr; gap: 9px; margin-top: 9px; }
   .camera-panel, .prediction-panel { min-height: auto; padding: 15px; }
   .control-panel, .event-panel { padding: 15px; }
+  .event-flag-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .event-flag-heading span { text-align: left; }
+  .event-flag-create { grid-template-columns: 1fr; }
+  .event-flag-create .button { justify-self: start; }
+  .event-flag-row { grid-template-columns: minmax(0, 1fr) minmax(135px, auto); }
+  .event-flag-row select { grid-column: 1; grid-row: 2; }
+  .event-flag-row .button { grid-column: 2; grid-row: 1 / 3; }
   .token-field { align-items: flex-start; flex-direction: column; gap: 6px; }
   .camera-stage { height: clamp(190px, 58vw, 280px); margin-top: 14px; }
   .camera-device-row { grid-template-columns: 7px minmax(0, 1fr) auto; }

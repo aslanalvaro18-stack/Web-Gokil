@@ -65,6 +65,9 @@ Jika daftar kamera menunjukkan akses ditolak, pastikan pengguna Linux memiliki i
 | `POST` | `/api/drying/stop` | Akhiri sesi dan catat durasi |
 | `GET` | `/api/events?limit=50` | Ambil riwayat operasi |
 | `POST` | `/api/events` | Catat event dengan `event_type` bebas melalui JSON atau query |
+| `GET` | `/api/event-flags` | Daftar sinyal/event flag untuk ArtecRobo |
+| `POST` | `/api/event-flags` | Buat flag baru (`name`, `mode`: `once` atau `ack`) dalam keadaan mati |
+| `PUT` | `/api/event-flags/{name}` | Nyalakan/matikan flag atau ubah mode |
 | `GET` | `/api/variables` | Daftar variabel Scratch yang tersimpan |
 | `GET` | `/api/variables/{name}` | Baca nilai variabel Scratch |
 | `POST` | `/api/variables/{name}` | Buat/perbarui variabel dengan JSON `{"value":...}` atau query `?value=...` |
@@ -86,30 +89,41 @@ Gunakan endpoint `/api/artec/` bila blok ArtecRobo lebih mudah mengolah teks dar
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1/online` | `true` atau `false` |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1/age` | Umur heartbeat dalam detik |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1/name` | Nama alat |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1` | Data perangkat sebagai satu baris teks |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices` | Baris `device_id|status|connection_status` |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/components?device_id=core-1` | Baris `component_id|name|device_id` |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/components/motor-1/current_value` | Nilai komponen saat ini |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/components/motor-1/target_value` | Target komponen |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/components/motor-1/reported_condition` | Kondisi terakhir |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/components/motor-1` | Detail komponen sebagai satu baris teks |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/telemetry/uptime` | Uptime detik terakhir |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/telemetry/status` | Status telemetri terakhir |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/telemetry?limit=20` | Riwayat telemetri sebagai baris teks |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/telemetry/history?limit=10` | Baris `uptime|status|waktu` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/readings?device_id=core-1&limit=100` | Semua pembacaan sensor sebagai baris teks |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/readings/core-1/light-1/value` | Nilai sensor terakhir |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/readings/core-1/light-1/unit` | Satuan sensor |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/readings/core-1` | Baris `sensor_id|jenis|nilai|satuan|waktu` |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1/components/motor-1/condition` | Kondisi komponen terakhir |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/devices/core-1/components/motor-1/reports?limit=10` | Baris `kondisi|waktu` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/component-condition-reports?device_id=core-1&component_id=motor-1` | Riwayat kondisi umum sebagai baris teks |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/predictions/class` | Kelas terakhir, misalnya `owner` atau `unknown` |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/predictions/confidence` | Confidence prediksi terakhir |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/predictions/latest` | Detail prediksi terakhir sebagai baris teks |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/access/status` | `trusted`, `untrusted`, atau `unknown` |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/access/is_trusted` | `true` atau `false` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/access/latest` | Ringkasan akses sebagai baris teks |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/dashboard` | Ringkasan telemetri, akses, kontrol, dan event |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/dashboard/uptime_seconds` | Uptime terakhir |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/weather` | Semua field cuaca sebagai baris teks |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/weather/temperature_c` | Suhu Pakem |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/weather/condition` | Kondisi cuaca |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/control/mode` | `manual` atau `auto` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/control/state` | Snapshot kontrol dan aktuator sebagai baris teks |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/control/emergency_mode` | `true` atau `false` |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/control/actuators/roof/target_position` | Target aktuator |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/events?limit=10` | Baris `jenis|sumber|nilai|waktu` |
+| `GET` | `https://dev.pradnyasiwi.web.id/api/artec/events/buka_lumbung` | Baca event flag: `true` atau `false` |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/variables` | Baris `nama|nilai|updated_at` |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/variables/jumlah_panen` | Nilai variabel dalam teks; `tidak_ada` jika belum dibuat |
 | `GET` | `https://dev.pradnyasiwi.web.id/api/artec/emergency` | `on` atau `off` |
@@ -138,13 +152,27 @@ Semua POST di bawah menerima parameter melalui URL dan tidak memerlukan body JSO
 | `POST` | `https://dev.pradnyasiwi.web.id/api/artec/drying/start?target_seconds=3600` | Mulai jemur |
 | `POST` | `https://dev.pradnyasiwi.web.id/api/artec/drying/stop` | Hentikan jemur |
 | `POST` | `https://dev.pradnyasiwi.web.id/api/artec/events?event_type=catatan&value=mulai` | Catat event |
+| `POST` | `https://dev.pradnyasiwi.web.id/api/artec/events/buka_lumbung?value=false` | Reset flag mode ACK dari Artec |
 | `POST` | `https://dev.pradnyasiwi.web.id/api/artec/variables/jumlah_panen?value=42` | Buat/perbarui variabel; balasan `tersimpan` |
 | `POST` | `https://dev.pradnyasiwi.web.id/api/artec/variables/status_jemur?value=sedang%20dijemur` | Simpan teks ke variabel |
 | `POST` | `https://dev.pradnyasiwi.web.id/api/artec/emergency?mode=on` | Aktifkan/nonaktifkan emergency |
 
 Polling command dan ACK per-device menerima `X-Device-Token` sebagai parameter URL agar unit yang tidak mendukung header tetap dapat mengirimkannya. Token tetap diverifikasi terhadap `AGRO_DEVICE_TOKENS`; gunakan HTTPS, batasi API ke jaringan tepercaya, dan cegah query URL tercatat pada log karena URL bertoken dapat terekspos. Unggah prediksi foto tetap memerlukan multipart file `image`; API prediksi membalas access status berupa teks. Stream kamera dan unggah foto adalah pengecualian media, bukan body teks biasa. Endpoint API JSON lama tetap tersedia untuk dashboard.
 
-Event khusus dapat memakai `event_type` buatan sendiri, misalnya `panen_dimulai`, dan dibaca kembali melalui `GET /api/events` atau `/api/artec/events`. Variabel Scratch disimpan berdasarkan nama; POST berikut membuat atau memperbarui nilai yang sama, lalu GET mengembalikan nilai terakhir:
+Event khusus dapat memakai `event_type` buatan sendiri, misalnya `panen_dimulai`, dan dibaca kembali melalui `GET /api/events` atau `/api/artec/events`. Event flag adalah sinyal terpisah dari log: buat dari web atau API dalam keadaan mati, pilih reset `once` atau `ack`, lalu nyalakan dengan PUT. Pada mode `once`, GET Artec pertama yang mendapat `true` langsung meresetnya ke `false`; pada mode `ack`, GET berulang tetap `true` sampai Artec mengirim POST `value=false`:
+
+```bash
+curl -X POST 'http://localhost:3000/api/event-flags' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"buka_lumbung","mode":"ack"}'
+curl -X PUT 'http://localhost:3000/api/event-flags/buka_lumbung' \
+  -H 'Content-Type: application/json' \
+  -d '{"active":true}'
+curl 'http://localhost:3000/api/artec/events/buka_lumbung'
+curl -X POST 'http://localhost:3000/api/artec/events/buka_lumbung?value=false'
+```
+
+Mode `once` menggunakan payload `{"name":"buka_lumbung","mode":"once"}` saat dibuat. Variabel Scratch disimpan berdasarkan nama; POST berikut membuat atau memperbarui nilai yang sama, lalu GET mengembalikan nilai terakhir:
 
 ```bash
 curl -X POST 'http://localhost:3000/api/artec/events?event_type=panen_dimulai&value=blok_1'

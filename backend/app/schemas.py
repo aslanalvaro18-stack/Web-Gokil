@@ -106,6 +106,10 @@ class DeviceCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
 
 
+class DeviceNameUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
 class DeviceComponentCreate(BaseModel):
     model_config = ConfigDict(json_schema_extra={
         'examples': [{
@@ -258,6 +262,23 @@ class OperationEvent(BaseModel):
     duration_seconds: int | None
     detail: dict
     occurred_at: str
+
+
+class EventFlagCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80, pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
+    mode: Literal['once', 'ack'] = 'once'
+
+
+class EventFlagUpdate(BaseModel):
+    active: bool | None = None
+    mode: Literal['once', 'ack'] | None = None
+
+
+class EventFlagRecord(BaseModel):
+    name: str
+    active: bool
+    mode: Literal['once', 'ack']
+    updated_at: str
 
 
 class ControlSnapshot(BaseModel):

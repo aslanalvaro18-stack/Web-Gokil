@@ -120,6 +120,12 @@ def initialize_database(database_path: Path) -> None:
                 detail TEXT NOT NULL DEFAULT '{}',
                 occurred_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS event_flags (
+                name TEXT PRIMARY KEY,
+                active INTEGER NOT NULL DEFAULT 0,
+                mode TEXT NOT NULL CHECK (mode IN ('once', 'ack')),
+                updated_at TEXT NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS sensor_readings_recorded_at_idx
                 ON sensor_readings (recorded_at DESC);
             CREATE INDEX IF NOT EXISTS sensor_readings_device_idx
@@ -461,6 +467,24 @@ def create_device(
     return _device_status_with_freshness(dict(row), stale_after_seconds)
 
 
+def update_device_name(
+    database_path: Path,
+    device_id: str,
+    name: str,
+    stale_after_seconds: int = 30,
+) -> dict | None:
+    with _connect(database_path) as connection:
+        connection.execute(
+            'UPDATE device_status SET name = ? WHERE device_id = ?',
+            (name, device_id),
+        )
+        row = connection.execute(
+            'SELECT device_id, name, status, last_seen FROM device_status WHERE device_id = ?',
+            (device_id,),
+        ).fetchone()
+    return _device_status_with_freshness(dict(row), stale_after_seconds) if row else None
+
+
 def update_device_status(
     database_path: Path,
     device_id: str,
@@ -727,6 +751,93 @@ def list_operation_events(database_path: Path, limit: int) -> list[dict]:
             'SELECT * FROM operation_events ORDER BY id DESC LIMIT ?', (limit,)
         ).fetchall()
     return [_decode_event(dict(row)) for row in rows]
+
+
+def _event_flag_record(row: sqlite3.Row | dict) -> dict:
+    return {
+        'name': row['name'],
+        'active': bool(row['active']),
+        'mode': row['mode'],
+        'updated_at': row['updated_at'],
+    }
+
+
+def create_event_flag(database_path: Path, name: str, mode: str) -> dict | None:
+    updated_at = datetime.now(timezone.utc).isoformat(timespec='seconds')
+    try:
+        with _connect(database_path) as connection:
+            connection.execute(
+                'INSERT INTO event_flags (name, active, mode, updated_at) VALUES (?, 0, ?, ?)',
+                (name, mode, updated_at),
+            )
+            row = connection.execute(
+                'SELECT name, active, mode, updated_at FROM event_flags WHERE name = ?',
+                (name,),
+            ).fetchone()
+    except sqlite3.IntegrityError:
+        return None
+    return _event_flag_record(row)
+
+
+def get_event_flag(database_path: Path, name: str) -> dict | None:
+    with _connect(database_path) as connection:
+        row = connection.execute(
+            'SELECT name, active, mode, updated_at FROM event_flags WHERE name = ?',
+            (name,),
+        ).fetchone()
+    return _event_flag_record(row) if row else None
+
+
+def list_event_flags(database_path: Path) -> list[dict]:
+    with _connect(database_path) as connection:
+        rows = connection.execute(
+            'SELECT name, active, mode, updated_at FROM event_flags ORDER BY name'
+        ).fetchall()
+    return [_event_flag_record(row) for row in rows]
+
+
+def update_event_flag(
+    database_path: Path,
+    name: str,
+    *,
+    active: bool | None = None,
+    mode: str | None = None,
+) -> dict | None:
+    updated_at = datetime.now(timezone.utc).isoformat(timespec='seconds')
+    with _connect(database_path) as connection:
+        connection.execute(
+            '''
+            UPDATE event_flags
+            SET active = COALESCE(?, active), mode = COALESCE(?, mode), updated_at = ?
+            WHERE name = ?
+            ''',
+            (None if active is None else int(active), mode, updated_at, name),
+        )
+        row = connection.execute(
+            'SELECT name, active, mode, updated_at FROM event_flags WHERE name = ?',
+            (name,),
+        ).fetchone()
+    return _event_flag_record(row) if row else None
+
+
+def consume_event_flag(database_path: Path, name: str) -> dict | None:
+    with _connect(database_path) as connection:
+        connection.execute('BEGIN IMMEDIATE')
+        row = connection.execute(
+            'SELECT name, active, mode, updated_at FROM event_flags WHERE name = ?',
+            (name,),
+        ).fetchone()
+        if row is None:
+            return None
+
+        record = _event_flag_record(row)
+        if record['active'] and record['mode'] == 'once':
+            updated_at = datetime.now(timezone.utc).isoformat(timespec='seconds')
+            connection.execute(
+                'UPDATE event_flags SET active = 0, updated_at = ? WHERE name = ?',
+                (updated_at, name),
+            )
+        return record
 
 
 def get_control_snapshot(database_path: Path) -> dict:

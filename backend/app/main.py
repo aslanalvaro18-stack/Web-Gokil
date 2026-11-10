@@ -28,11 +28,15 @@ from app.schemas import (
     DeviceComponentCreate,
     DeviceComponentRecord,
     DeviceCoreStatusUpdate,
+    DeviceNameUpdate,
     DeviceStatusRecord,
     DeviceStatusUpdate,
     DryingStart,
     EmergencyStatus,
     EmergencyUpdate,
+    EventFlagCreate,
+    EventFlagRecord,
+    EventFlagUpdate,
     ModeUpdate,
     OperationEvent,
     OperationEventCreate,
@@ -101,6 +105,8 @@ API backend AGRO-SEMBADA untuk dashboard, Core Unit, sensor, komponen, kontrol, 
 ## Event dan variabel Scratch
 
 - Nama event bebas dikirim melalui `POST /api/events` (`event_type`) atau `POST /api/artec/events?event_type=...`; riwayatnya dibaca lewat `GET /api/events` atau `GET /api/artec/events`.
+- Event flag dibuat dari web/API dengan `POST /api/event-flags`, lalu dinyalakan dengan `PUT /api/event-flags/{name}` dan `{"active":true}`.
+- `GET /api/artec/events/{name}` mengembalikan `true`/`false`. Mode `once` otomatis mati setelah satu GET yang menerima `true`; mode `ack` tetap aktif sampai Artec mengirim `POST /api/artec/events/{name}?value=false`.
 - Variabel dibuat atau diperbarui dengan `POST /api/variables/{nama}` dan dibaca lewat `GET /api/variables/{nama}`. Nilainya boleh teks, angka, boolean, atau null.
 - Untuk blok ArtecRobo tanpa JSON body, gunakan `POST /api/artec/variables/{nama}?value=...` lalu baca teksnya dengan `GET /api/artec/variables/{nama}`.
 - Sensor dikirim melalui `POST /api/devices/{device_id}/readings` dan dibaca melalui `GET /api/readings`; format teks ArtecRobo tersedia di `/api/artec/devices/{device_id}/readings`.
@@ -110,6 +116,15 @@ Contoh variabel counter:
 ```text
 POST /api/artec/variables/jumlah_panen?value=42
 GET  /api/artec/variables/jumlah_panen
+```
+
+Contoh flag yang menunggu konfirmasi Artec:
+
+```text
+POST /api/event-flags          {"name":"buka_lumbung","mode":"ack"}
+PUT  /api/event-flags/buka_lumbung   {"active":true}
+GET  /api/artec/events/buka_lumbung  -> true
+POST /api/artec/events/buka_lumbung?value=false
 ```
 
 ## Contoh alur sensor
@@ -138,33 +153,38 @@ DOCS_COPY_URL_SCRIPT = r'''
 <script>
 (() => {
     const copyOperationUrl = async (operation, button) => {
+        const label = button.dataset.copyLabel || 'Salin URL';
+        const executedUrl = operation.querySelector('.request-url pre')?.textContent?.trim();
         const pathElement = operation.querySelector('.opblock-summary-path[data-path]');
         let path = pathElement?.getAttribute('data-path');
-        if (!path) return;
+        if (!executedUrl && !path) return;
 
         const pathPlaceholders = [];
-        path = path.replace(/\{([^}]+)\}/g, (placeholder, parameterName) => {
-            const row = Array.from(operation.querySelectorAll('tr[data-param-in="path"]'))
-                .find((item) => item.getAttribute('data-param-name') === parameterName);
-            const value = row?.querySelector('input, select, textarea')?.value?.trim();
-            if (value) return encodeURIComponent(value);
-            const marker = `__OPENAPI_PATH_${parameterName}__`;
-            pathPlaceholders.push([marker, placeholder]);
-            return marker;
-        });
+        let copiedUrl = executedUrl;
+        if (!copiedUrl) {
+            path = path.replace(/\{([^}]+)\}/g, (placeholder, parameterName) => {
+                const row = Array.from(operation.querySelectorAll('tr[data-param-in="path"]'))
+                    .find((item) => item.getAttribute('data-param-name') === parameterName);
+                const value = row?.querySelector('input, select, textarea')?.value?.trim();
+                if (value) return encodeURIComponent(value);
+                const marker = `__OPENAPI_PATH_${parameterName}__`;
+                pathPlaceholders.push([marker, placeholder]);
+                return marker;
+            });
 
-        const selectedServer = document.querySelector('#servers')?.value || '/';
-        const url = new URL(path, new URL(selectedServer, window.location.href));
-        operation.querySelectorAll('tr[data-param-in="query"]').forEach((row) => {
-            const parameterName = row.getAttribute('data-param-name');
-            const value = row.querySelector('input, select, textarea')?.value?.trim();
-            if (parameterName && value) url.searchParams.set(parameterName, value);
-        });
+            const selectedServer = document.querySelector('#servers')?.value || '/';
+            const url = new URL(path, new URL(selectedServer, window.location.href));
+            operation.querySelectorAll('tr[data-param-in="query"]').forEach((row) => {
+                const parameterName = row.getAttribute('data-param-name');
+                const value = row.querySelector('input, select, textarea')?.value?.trim();
+                if (parameterName && value) url.searchParams.set(parameterName, value);
+            });
 
-        let copiedUrl = url.href;
-        pathPlaceholders.forEach(([marker, placeholder]) => {
-            copiedUrl = copiedUrl.replace(marker, placeholder);
-        });
+            copiedUrl = url.href;
+            pathPlaceholders.forEach(([marker, placeholder]) => {
+                copiedUrl = copiedUrl.replace(marker, placeholder);
+            });
+        }
 
         try {
             await navigator.clipboard.writeText(copiedUrl);
@@ -173,27 +193,47 @@ DOCS_COPY_URL_SCRIPT = r'''
             button.textContent = 'Gagal menyalin';
         }
         window.setTimeout(() => {
-            if (button.isConnected) button.textContent = 'Salin URL';
+            if (button.isConnected) button.textContent = label;
         }, 1600);
+    };
+
+    const createCopyButton = (operation, label, className, title) => {
+        const button = document.createElement('button');
+        button.className = className;
+        button.type = 'button';
+        button.textContent = label;
+        button.dataset.copyLabel = label;
+        button.title = title;
+        button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            void copyOperationUrl(operation, button);
+        });
+        return button;
     };
 
     const addCopyButtons = () => {
         document.querySelectorAll('.opblock').forEach((operation) => {
             const summary = operation.querySelector('.opblock-summary');
-            if (!summary || summary.querySelector('.copy-api-url')) return;
+            if (summary && !summary.querySelector('.copy-api-url')) {
+                const button = createCopyButton(
+                    operation,
+                    'Salin URL',
+                    'copy-api-url',
+                    'Salin URL endpoint dengan server dan parameter yang dipilih',
+                );
+                const arrow = summary.querySelector('.opblock-control-arrow');
+                summary.insertBefore(button, arrow);
+            }
 
-            const button = document.createElement('button');
-            button.className = 'copy-api-url';
-            button.type = 'button';
-            button.textContent = 'Salin URL';
-            button.title = 'Salin URL endpoint dengan server dan parameter yang dipilih';
-            button.addEventListener('click', (event) => {
-                event.stopPropagation();
-                void copyOperationUrl(operation, button);
-            });
-
-            const arrow = summary.querySelector('.opblock-control-arrow');
-            summary.insertBefore(button, arrow);
+            const executeWrapper = operation.querySelector('.execute-wrapper');
+            if (executeWrapper && !executeWrapper.querySelector('.copy-api-url-try')) {
+                executeWrapper.appendChild(createCopyButton(
+                    operation,
+                    'Salin URL request',
+                    'copy-api-url copy-api-url-try',
+                    'Salin Request URL untuk dipakai di ArtecRobo',
+                ));
+            }
         });
     };
 
@@ -599,6 +639,25 @@ def create_app(
         )
         return device['status'] if device else 'tidak_dikenal'
 
+    @app.get('/api/artec/devices/{device_id}', response_class=PlainTextResponse)
+    def artec_device_record(device_id: str) -> str:
+        device = database.get_device_status(
+            app.state.database_path,
+            device_id,
+            device_stale_seconds,
+        )
+        return format_text_rows([device] if device else [], (
+            'device_id', 'name', 'status', 'connection_status', 'last_seen', 'age_seconds'
+        ))
+
+    @app.post('/api/artec/devices/status', response_class=PlainTextResponse)
+    def artec_compat_update_device_status(
+        device_id: str = Query(min_length=1, max_length=40),
+        status: Literal['hidup', 'mati'] = Query(),
+    ) -> str:
+        record = update_device_status(device_id=device_id, status=status)
+        return record['status']
+
     @app.get(
         '/api/artec/devices/{device_id}/online',
         response_class=PlainTextResponse,
@@ -672,6 +731,11 @@ def create_app(
         telemetry = database.latest_telemetry(app.state.database_path)
         return telemetry['status'] if telemetry else 'tidak_ada_data'
 
+    @app.get('/api/artec/telemetry', response_class=PlainTextResponse)
+    def artec_telemetry_records(limit: int = Query(default=20, ge=1, le=100)) -> str:
+        records = read_telemetry(limit)
+        return format_text_rows(records, ('id', 'uptime_seconds', 'status', 'recorded_at'))
+
     @app.get(
         '/api/artec/readings/{device_id}/{sensor_id}/value',
         response_class=PlainTextResponse,
@@ -718,11 +782,15 @@ def create_app(
 
     @app.get('/api/artec/predictions/{field}', response_class=PlainTextResponse)
     def artec_prediction_field(
-        field: Literal['id', 'class_name', 'confidence', 'access_status', 'captured_at'],
+        field: Literal['latest', 'id', 'class_name', 'confidence', 'access_status', 'captured_at'],
     ) -> str:
         prediction = database.latest_prediction(app.state.database_path)
         if prediction is None:
             return 'tidak_ada_data'
+        if field == 'latest':
+            return format_text_rows([prediction], (
+                'id', 'class_name', 'confidence', 'access_status', 'captured_at'
+            ))
         if field == 'access_status':
             return access_response(prediction)['access_status']
         if field == 'class_name':
@@ -736,9 +804,14 @@ def create_app(
 
     @app.get('/api/artec/access/{field}', response_class=PlainTextResponse)
     def artec_access_field(
-        field: Literal['is_trusted', 'identity', 'confidence', 'prediction_id', 'captured_at', 'expires_at'],
+        field: Literal['latest', 'is_trusted', 'identity', 'confidence', 'prediction_id', 'captured_at', 'expires_at'],
     ) -> str:
-        value = access_response(database.latest_prediction(app.state.database_path))[field]
+        access = access_response(database.latest_prediction(app.state.database_path))
+        if field == 'latest':
+            return format_text_rows([access], (
+                'access_status', 'is_trusted', 'identity', 'confidence', 'prediction_id', 'captured_at'
+            ))
+        value = access[field]
         if value is None:
             return 'tidak_ada'
         if isinstance(value, bool):
@@ -812,6 +885,21 @@ def create_app(
         )
         if record is None:
             raise HTTPException(status_code=409, detail='ID alat sudah terdaftar.')
+        return record
+
+    @app.put('/api/devices/{device_id}', response_model=DeviceStatusRecord)
+    def rename_device(device_id: str, payload: DeviceNameUpdate) -> dict:
+        name = payload.name.strip()
+        if not name:
+            raise HTTPException(status_code=422, detail='Nama alat tidak boleh kosong.')
+        record = database.update_device_name(
+            app.state.database_path,
+            device_id,
+            name,
+            device_stale_seconds,
+        )
+        if record is None:
+            raise HTTPException(status_code=404, detail='ID alat belum terdaftar.')
         return record
 
     @app.get('/api/devices/{device_id}/status', response_model=DeviceStatusRecord)
@@ -1184,6 +1272,38 @@ def create_app(
             detail=event.detail,
         )
 
+    @app.get('/api/event-flags', response_model=list[EventFlagRecord], tags=['Events & variables'])
+    def list_event_flags() -> list[dict]:
+        return database.list_event_flags(app.state.database_path)
+
+    @app.get('/api/event-flags/{name}', response_model=EventFlagRecord, tags=['Events & variables'])
+    def read_event_flag(name: str) -> dict:
+        flag = database.get_event_flag(app.state.database_path, name)
+        if flag is None:
+            raise HTTPException(status_code=404, detail='Event flag belum dibuat.')
+        return flag
+
+    @app.post('/api/event-flags', response_model=EventFlagRecord, status_code=201, tags=['Events & variables'])
+    def create_event_flag(payload: EventFlagCreate) -> dict:
+        flag = database.create_event_flag(app.state.database_path, payload.name, payload.mode)
+        if flag is None:
+            raise HTTPException(status_code=409, detail='Event flag sudah ada.')
+        return flag
+
+    @app.put('/api/event-flags/{name}', response_model=EventFlagRecord, tags=['Events & variables'])
+    def update_event_flag(name: str, payload: EventFlagUpdate) -> dict:
+        if not payload.model_fields_set:
+            raise HTTPException(status_code=422, detail='Kirim active atau mode untuk diperbarui.')
+        flag = database.update_event_flag(
+            app.state.database_path,
+            name,
+            active=payload.active,
+            mode=payload.mode,
+        )
+        if flag is None:
+            raise HTTPException(status_code=404, detail='Event flag belum dibuat.')
+        return flag
+
     @app.get('/api/emergency', response_class=PlainTextResponse)
     def read_emergency_status(
         mode: Literal['on'] | None = Query(default=None),
@@ -1335,8 +1455,16 @@ def create_app(
     def format_text_rows(rows: list[dict], fields: tuple[str, ...]) -> str:
         if not rows:
             return 'kosong'
+
+        def format_value(value: object) -> str:
+            if value is None:
+                return ''
+            if isinstance(value, bool):
+                return 'true' if value else 'false'
+            return str(value)
+
         return '\n'.join(
-            '|'.join('' if row.get(field) is None else str(row[field]) for field in fields)
+            '|'.join(format_value(row.get(field)) for field in fields)
             for row in rows
         )
 
@@ -1469,6 +1597,24 @@ def create_app(
         records = read_sensor_readings(limit, device_id)
         return format_text_rows(records, ('sensor_id', 'sensor_type', 'value', 'unit', 'recorded_at'))
 
+    @app.get('/api/artec/readings', response_class=PlainTextResponse)
+    def artec_all_readings(
+        limit: int = Query(default=100, ge=1, le=500),
+        device_id: str | None = Query(default=None, min_length=1, max_length=40),
+    ) -> str:
+        records = read_sensor_readings(limit, device_id)
+        return format_text_rows(records, (
+            'device_id', 'sensor_id', 'sensor_type', 'value', 'unit', 'recorded_at'
+        ))
+
+    @app.get('/api/artec/components/{component_id}', response_class=PlainTextResponse)
+    def artec_component_record(component_id: str) -> str:
+        component = database.get_device_component(app.state.database_path, component_id)
+        return format_text_rows([component] if component else [], (
+            'component_id', 'name', 'component_type', 'device_id', 'confirmed', 'enabled',
+            'estimated_count', 'current_value', 'target_value', 'reported_condition',
+        ))
+
     @app.get(
         '/api/artec/devices/{device_id}/components/{component_id}/reports',
         response_class=PlainTextResponse,
@@ -1481,10 +1627,42 @@ def create_app(
         reports = read_component_condition_reports(limit, device_id, component_id)
         return format_text_rows(reports, ('condition', 'reported_at'))
 
+    @app.get('/api/artec/component-condition-reports', response_class=PlainTextResponse)
+    def artec_component_condition_reports(
+        limit: int = Query(default=20, ge=1, le=100),
+        device_id: str | None = Query(default=None, min_length=1, max_length=40),
+        component_id: str | None = Query(default=None, min_length=1, max_length=80),
+    ) -> str:
+        reports = read_component_condition_reports(limit, device_id, component_id)
+        return format_text_rows(reports, (
+            'device_id', 'component_id', 'condition', 'reported_at'
+        ))
+
     @app.post('/api/artec/predictions', response_class=PlainTextResponse)
     async def artec_create_prediction(image: UploadFile = File(...)) -> str:
         prediction = await create_prediction(image)
         return prediction['access_status']
+
+    @app.get('/api/artec/dashboard', response_class=PlainTextResponse)
+    def artec_dashboard_snapshot() -> str:
+        dashboard = read_dashboard()
+        telemetry = dashboard['telemetry'] or {}
+        prediction = dashboard['prediction'] or {}
+        access = dashboard['access']
+        control = dashboard['control']
+        rows = [
+            {'field': 'uptime_seconds', 'value': telemetry.get('uptime_seconds')},
+            {'field': 'telemetry_status', 'value': telemetry.get('status')},
+            {'field': 'prediction_class', 'value': prediction.get('class_name')},
+            {'field': 'access_status', 'value': access['access_status']},
+            {'field': 'is_trusted', 'value': access['is_trusted']},
+            {'field': 'control_mode', 'value': control['mode']},
+            {'field': 'emergency_mode', 'value': control['emergency_mode']},
+            {'field': 'drying_elapsed_seconds', 'value': control['drying_elapsed_seconds']},
+            {'field': 'pending_commands', 'value': len(control['pending_commands'])},
+            {'field': 'events', 'value': len(dashboard['events'])},
+        ]
+        return format_text_rows(rows, ('field', 'value'))
 
     @app.get('/api/artec/dashboard/{field}', response_class=PlainTextResponse)
     def artec_dashboard_field(
@@ -1513,14 +1691,39 @@ def create_app(
             return 'true' if value else 'false'
         return str(value)
 
+    @app.get('/api/artec/weather', response_class=PlainTextResponse)
+    def artec_weather_snapshot() -> str:
+        weather = read_weather()
+        return format_text_rows(
+            [{'field': field, 'value': value} for field, value in weather.items()],
+            ('field', 'value'),
+        )
+
     @app.get('/api/artec/control/{field}', response_class=PlainTextResponse)
     def artec_control_field(
         field: Literal[
-            'mode', 'emergency_mode', 'drying_elapsed_seconds', 'drying_target_seconds',
+            'state', 'mode', 'emergency_mode', 'drying_elapsed_seconds', 'drying_target_seconds',
             'drying_started_at', 'updated_at',
         ],
     ) -> str:
         state = read_control_state()
+        if field == 'state':
+            rows = [
+                {'field': key, 'value': state.get(key)}
+                for key in (
+                    'mode', 'emergency_mode', 'drying_started_at', 'drying_target_seconds',
+                    'drying_elapsed_seconds', 'updated_at',
+                )
+            ]
+            rows.extend(
+                {
+                    'field': f'actuator_{actuator["name"]}',
+                    'value': json.dumps(actuator, ensure_ascii=True),
+                }
+                for actuator in state['actuators']
+            )
+            rows.append({'field': 'pending_commands', 'value': len(state['pending_commands'])})
+            return format_text_rows(rows, ('field', 'value'))
         value = state.get(field)
         if value is None:
             return 'tidak_ada'
@@ -1582,6 +1785,21 @@ def create_app(
             duration_seconds=duration_seconds,
             detail='{}',
         )
+        return 'tersimpan'
+
+    @app.get('/api/artec/events/{name}', response_class=PlainTextResponse)
+    def artec_read_event_flag(name: str) -> str:
+        flag = database.consume_event_flag(app.state.database_path, name)
+        return 'true' if flag and flag['active'] else 'false'
+
+    @app.post('/api/artec/events/{name}', response_class=PlainTextResponse)
+    def artec_update_event_flag(
+        name: str,
+        value: Literal['true', 'false'] = Query(),
+    ) -> str:
+        flag = database.update_event_flag(app.state.database_path, name, active=value == 'true')
+        if flag is None:
+            raise HTTPException(status_code=404, detail='Event flag belum dibuat di dashboard.')
         return 'tersimpan'
 
     @app.get('/api/artec/variables', response_class=PlainTextResponse)

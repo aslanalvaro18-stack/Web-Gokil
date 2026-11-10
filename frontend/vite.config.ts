@@ -4,6 +4,12 @@ import { defineConfig } from 'vite'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    dedupe: ['react', 'react-dom', '@react-three/fiber', 'three'],
+  },
+  optimizeDeps: {
+    include: ['react', 'react-dom', '@react-three/fiber', '@react-three/drei', 'three'],
+  },
   server: {
     port: 5173,
     strictPort: true,
